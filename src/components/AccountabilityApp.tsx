@@ -1,588 +1,783 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  CheckCircle, 
-  Target, 
-  MessageCircle, 
-  TrendingUp, 
-  Award, 
-  Users, 
-  ArrowRight,
-  ArrowLeft,
-  Zap,
-  Heart,
-  BookOpen,
-  Dumbbell,
-  Brain,
-  Star,
-  Flame,
-  Crown,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  Phone,
-  Play,
-  Pause,
-  ChevronRight,
-  Shield,
-  Smartphone,
-  Calendar,
-  AlertCircle,
-  CheckSquare,
-  RefreshCw
-} from 'lucide-react';
-
-type ScreenType = 'splash' | 'welcome' | 'onboarding' | 'signup' | 'login' | 'planSelection';
-
-interface OnboardingStep {
-  title: string;
-  subtitle: string;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-  description: string;
-  features: string[];
-}
-
-interface LoginForm {
-  email: string;
-  password: string;
-}
-
-interface SignupForm {
-  name: string;
-  email: string;
-  password: string;
-}
+import { useAuth } from '@/lib/auth-context-real';
+import { UpgradePrompt, TierBadge, FeatureLimit } from '@/components/ui/upgrade-prompt-no-styles';
+import { ThemeDialog } from '@/components/ui/theme-dialog';
 
 const AccountabilityApp: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('splash');
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loginForm, setLoginForm] = useState<LoginForm>({ email: '', password: '' });
-  const [signupForm, setSignupForm] = useState<SignupForm>({ name: '', email: '', password: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signOut, clearError } = useAuth();
+  const [currentScreen, setCurrentScreen] = useState<'welcome' | 'login' | 'signup' | 'dashboard'>('welcome');
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [signupForm, setSignupForm] = useState({ name: '', email: '', password: '' });
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [themeDialogOpen, setThemeDialogOpen] = useState(false);
 
-  // Auto-advance splash screen
   useEffect(() => {
-    if (currentScreen === 'splash') {
-      const timer = setTimeout(() => setCurrentScreen('welcome'), 2500);
-      return () => clearTimeout(timer);
+    if (user) {
+      setCurrentScreen('dashboard');
+    } else {
+      setCurrentScreen('welcome');
     }
-  }, [currentScreen]);
+  }, [user]);
 
-  const onboardingSteps: OnboardingStep[] = [
-    {
-      title: "Set Your Goals",
-      subtitle: "Choose what matters most to you",
-      icon: Target,
-      color: "from-purple-600 to-blue-600",
-      description: "Track fitness, education, habits, and mental health goals with personalized targets.",
-      features: ["Daily goal tracking", "Custom categories", "Flexible scheduling"]
-    },
-    {
-      title: "AI Coach Support", 
-      subtitle: "Your personal accountability partner",
-      icon: MessageCircle,
-      color: "from-blue-600 to-teal-600",
-      description: "Get daily check-ins, motivational messages, and insights via WhatsApp or SMS.",
-      features: ["Smart check-ins", "Pattern recognition", "Empathetic responses"]
-    },
-    {
-      title: "Build Streaks & Level Up",
-      subtitle: "Gamify your progress",
-      icon: Flame,
-      color: "from-orange-600 to-red-600", 
-      description: "Earn XP, unlock badges, and maintain streaks that keep you motivated every day.",
-      features: ["XP & levels", "Streak tracking", "Achievement badges"]
-    },
-    {
-      title: "Track Your Growth",
-      subtitle: "See your transformation",
-      icon: TrendingUp,
-      color: "from-green-600 to-emerald-600",
-      description: "Visual analytics show your patterns, progress, and areas for improvement.",
-      features: ["Progress charts", "Behavioral insights", "Success metrics"]
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitLoading(true);
+    const result = await signIn(loginForm.email, loginForm.password);
+    setSubmitLoading(false);
+    if (result.success) {
+      setCurrentScreen('dashboard');
     }
-  ];
+  };
 
-  const renderSplashScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-teal-600 flex items-center justify-center relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0">
-        <div className="absolute top-20 left-20 w-32 h-32 bg-white/10 rounded-full animate-pulse"></div>
-        <div className="absolute bottom-40 right-16 w-24 h-24 bg-white/10 rounded-full animate-pulse delay-1000"></div>
-        <div className="absolute top-1/3 right-1/4 w-16 h-16 bg-white/10 rounded-full animate-pulse delay-500"></div>
-      </div>
-      
-      <div className="text-center z-10 px-8">
-        <div className="bg-white/20 backdrop-blur-lg p-8 rounded-3xl mb-8 animate-bounce">
-          <Target className="w-16 h-16 text-white mx-auto" />
-        </div>
-        <h1 className="text-4xl font-bold text-white mb-4 animate-fade-in">
-          Accountability
-        </h1>
-        <h2 className="text-3xl font-bold text-white/90 mb-2 animate-fade-in delay-300">
-          On Autopilot
-        </h2>
-        <p className="text-white/80 text-lg animate-fade-in delay-500">
-          Your AI-powered discipline coach
-        </p>
-        
-        <div className="mt-8 flex justify-center">
-          <div className="flex space-x-1">
-            {[0, 1, 2].map(i => (
-              <div 
-                key={i}
-                className={`w-2 h-2 bg-white/60 rounded-full animate-pulse`}
-                style={{ animationDelay: `${i * 0.2}s` }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitLoading(true);
+    const result = await signUp(signupForm.email, signupForm.password, signupForm.name);
+    setSubmitLoading(false);
+    if (result.success) {
+      setCurrentScreen('dashboard');
+    }
+  };
 
-  const renderWelcomeScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 text-white flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-        <div className="bg-white/20 backdrop-blur-lg p-6 rounded-2xl mb-8">
-          <Target className="w-12 h-12 text-white mx-auto" />
-        </div>
-        
-        <h1 className="text-4xl font-bold mb-4">
-          Welcome to Your
-          <br />
-          Accountability Journey
-        </h1>
-        
-        <p className="text-xl text-white/90 mb-8 leading-relaxed">
-          Transform your goals into habits with AI-powered coaching and daily accountability
-        </p>
+  const handleGoogleSignIn = async () => {
+    setSubmitLoading(true);
+    const result = await signInWithGoogle();
+    setSubmitLoading(false);
+    if (result.success) {
+      setCurrentScreen('dashboard');
+    }
+  };
 
-        <div className="w-full max-w-sm space-y-4">
-          <button 
-            onClick={() => setCurrentScreen('onboarding')}
-            className="w-full bg-white text-purple-600 py-4 px-6 rounded-xl font-semibold text-lg hover:bg-white/90 transition-all flex items-center justify-center group"
-          >
-            Start Your Journey
-            <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </button>
-          
-          <button 
-            onClick={() => setCurrentScreen('login')}
-            className="w-full border-2 border-white/30 text-white py-4 px-6 rounded-xl font-semibold hover:bg-white/10 transition-all"
-          >
-            I Already Have an Account
-          </button>
-        </div>
-
-        <div className="mt-8 flex items-center space-x-8 text-white/80">
-          <div className="text-center">
-            <div className="text-2xl font-bold">50K+</div>
-            <div className="text-sm">Active Users</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold">4.8⭐</div>
-            <div className="text-sm">App Rating</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold">85%</div>
-            <div className="text-sm">Success Rate</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderOnboardingScreen = () => {
-    const step = onboardingSteps[onboardingStep];
-    const IconComponent = step.icon;
-    
+  // Loading state
+  if (loading) {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
-        {/* Progress bar */}
-        <div className="bg-gray-100 h-2">
-          <div 
-            className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 transition-all duration-500 ease-out"
-            style={{ width: `${((onboardingStep + 1) / onboardingSteps.length) * 100}%` }}
-          />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
         </div>
+      </div>
+    );
+  }
 
-        {/* Content */}
-        <div className="flex-1 flex flex-col px-8 py-12">
-          <div className="text-center mb-8">
-            <div className={`bg-gradient-to-r ${step.color} p-6 rounded-2xl w-20 h-20 mx-auto mb-6 flex items-center justify-center`}>
-              <IconComponent className="w-10 h-10 text-white" />
+  // Welcome Screen
+  const renderWelcomeScreen = () => (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      {/* ThemeToggle removed, theme selection now in sidebar dialog */}
+      <div className="max-w-md w-full mx-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Accountability On Autopilot</h1>
+          <p className="text-gray-600 dark:text-gray-300 mb-8">Your AI-powered discipline coach</p>
+          
+          <div className="space-y-4">
+            <button
+              onClick={() => setCurrentScreen('login')}
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => setCurrentScreen('signup')}
+              className="w-full px-6 py-3 border border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Create Account
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Login Screen
+  const renderLoginScreen = () => (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      {/* ThemeToggle removed, theme selection now in sidebar dialog */}
+      <div className="max-w-md w-full mx-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 text-center">Sign In</h2>
+          
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+              <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitLoading}
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              {submitLoading ? 'Signing In...' : 'Sign In'}
+            </button>
+          </form>
+
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
+              </div>
+            </div>
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={submitLoading}
+              className="mt-3 w-full px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+            >
+              🔍 Sign in with Google
+            </button>
+          </div>
+
+          <div className="mt-6 text-center">
+            <span className="text-gray-600 dark:text-gray-400">Don't have an account? </span>
+            <button
+              onClick={() => setCurrentScreen('signup')}
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+            >
+              Sign up
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Signup Screen
+  const renderSignupScreen = () => (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      {/* ThemeToggle removed, theme selection now in sidebar dialog */}
+      <div className="max-w-md w-full mx-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 text-center">Create Account</h2>
+          
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+              <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+              <input
+                type="text"
+                value={signupForm.name}
+                onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={signupForm.email}
+                onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+              <input
+                type="password"
+                value={signupForm.password}
+                onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitLoading}
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              {submitLoading ? 'Creating Account...' : 'Create Account'}
+            </button>
+          </form>
+
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
+              </div>
+            </div>
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={submitLoading}
+              className="mt-3 w-full px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+            >
+              🔍 Sign up with Google
+            </button>
+          </div>
+
+          <div className="mt-6 text-center">
+            <span className="text-gray-600 dark:text-gray-400">Already have an account? </span>
+            <button
+              onClick={() => setCurrentScreen('login')}
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+            >
+              Sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Dashboard with tiered features
+  const renderDashboard = () => {
+    const maxGoals = getFeatureLimit('maxGoals') || 0;
+    const currentGoals = 0; // This would come from actual data
+    const canAddMoreGoals = maxGoals === -1 || currentGoals < maxGoals;
+    const canUseAdvancedAnalytics = canAccessFeature('canUseAdvancedAnalytics');
+    const canExportData = canAccessFeature('canExportData');
+
+    // Handler to navigate to settings for upgrades
+    const handleUpgradeClick = () => {
+      setCurrentPage('settings');
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <ThemeDialog open={themeDialogOpen} onClose={() => setThemeDialogOpen(false)} />
+        <div className="flex">
+          {/* Sidebar */}
+          <div className="w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h1 className="text-xl font-bold text-gray-800 dark:text-white">Accountability</h1>
+                <TierBadge tier={userTier} />
+              </div>
             </div>
             
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">
-              {step.title}
-            </h2>
-            <p className="text-lg text-gray-600 mb-6">
-              {step.subtitle}
-            </p>
-            <p className="text-gray-700 leading-relaxed mb-8">
-              {step.description}
-            </p>
-          </div>
-
-          {/* Features list */}
-          <div className="space-y-4 mb-12">
-            {step.features.map((feature, idx) => (
-              <div key={idx} className="flex items-center space-x-4 bg-gray-50 p-4 rounded-xl">
-                <CheckCircle className="w-6 h-6 text-green-500 flex-shrink-0" />
-                <span className="text-gray-700 font-medium">{feature}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Navigation */}
-          <div className="mt-auto">
-            <div className="flex justify-between items-center mb-6">
-              <button
-                onClick={() => onboardingStep > 0 ? setOnboardingStep(onboardingStep - 1) : setCurrentScreen('welcome')}
-                className="flex items-center text-gray-500 hover:text-gray-700"
-              >
-                <ArrowLeft className="w-5 h-5 mr-1" />
-                Back
-              </button>
-              
-              <div className="flex space-x-2">
-                {onboardingSteps.map((_, idx) => (
-                  <div 
-                    key={idx}
-                    className={`w-2 h-2 rounded-full transition-colors ${
-                      idx === onboardingStep ? 'bg-purple-600' : 'bg-gray-300'
+            <nav className="p-4">
+              <div className="space-y-2">
+                {[
+                  { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+                  { id: 'goals', label: 'Goals', icon: '🎯' },
+                  { id: 'checkins', label: 'Check-ins', icon: '✅' },
+                  { id: 'progress', label: 'Progress', icon: '📊' },
+                  { id: 'settings', label: 'Settings', icon: '⚙️' },
+                  ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: '🔧' }] : []),
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setCurrentPage(item.id)}
+                    className={`w-full text-left p-3 rounded-lg transition-colors ${
+                      currentPage === item.id 
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-r-2 border-blue-500 text-blue-700 dark:text-blue-400' 
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
-                  />
+                  >
+                    <span className="mr-3">{item.icon}</span>
+                    {item.label}
+                  </button>
                 ))}
+                {/* Theme selector item */}
+                <button
+                  onClick={() => setThemeDialogOpen(true)}
+                  className="w-full text-left p-3 rounded-lg transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 mt-4 border-t border-gray-200 dark:border-gray-700 pt-4"
+                  aria-label="Select theme"
+                >
+                  <span className="mr-3">🌓</span> Theme
+                </button>
               </div>
-              
-              <span className="text-gray-500 text-sm">
-                {onboardingStep + 1} of {onboardingSteps.length}
-              </span>
-            </div>
+            </nav>
+          </div>
 
-            <button
-              onClick={() => {
-                if (onboardingStep < onboardingSteps.length - 1) {
-                  setOnboardingStep(onboardingStep + 1);
-                } else {
-                  setCurrentScreen('signup');
-                }
-              }}
-              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-4 px-6 rounded-xl font-semibold text-lg hover:opacity-90 transition-opacity flex items-center justify-center group"
-            >
-              {onboardingStep < onboardingSteps.length - 1 ? 'Continue' : 'Get Started'}
-              <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
+          {/* Main Content */}
+          <div className="flex-1 p-8">
+            {currentPage === 'dashboard' && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Welcome back, {user?.name}!</h1>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-400">Ready to stay accountable today?</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        await signOut();
+                        setCurrentScreen('welcome');
+                      }}
+                      className="px-3 py-1 bg-red-500 dark:bg-red-600 text-white rounded text-xs hover:bg-red-600 dark:hover:bg-red-500 transition-colors"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+
+                {/* Usage Summary for Free Users */}
+                {userTier === 'free' && (
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-6 mb-8">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-4">Your Usage</h3>
+                        <div className="grid grid-cols-2 gap-6">
+                          <FeatureLimit 
+                            current={currentGoals} 
+                            limit={maxGoals} 
+                            label="Active Goals" 
+                          />
+                          <FeatureLimit 
+                            current={0} 
+                            limit={30} 
+                            label="Check-ins this month" 
+                          />
+                        </div>
+                      </div>
+                      <div className="ml-6">
+                        <button 
+                          onClick={handleUpgradeClick}
+                          className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all text-sm font-medium"
+                        >
+                          Upgrade Now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Daily Goals Card */}
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-xl p-6 text-white">
+                    <h3 className="text-xl font-semibold mb-2">Daily Goals</h3>
+                    <p className="text-blue-100 dark:text-blue-200 mb-4">Track your daily objectives</p>
+                    <div className="text-3xl font-bold">0/0</div>
+                    <p className="text-sm text-blue-200 dark:text-blue-300">Goals completed today</p>
+                  </div>
+
+                  {/* Streak Card */}
+                  <div className="bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-xl p-6 text-white">
+                    <h3 className="text-xl font-semibold mb-2">Streak</h3>
+                    <p className="text-green-100 dark:text-green-200 mb-4">Your consistency record</p>
+                    <div className="text-3xl font-bold">0</div>
+                    <p className="text-sm text-green-200 dark:text-green-300">Days in a row</p>
+                  </div>
+
+                  {/* Progress Card */}
+                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-xl p-6 text-white">
+                    <h3 className="text-xl font-semibold mb-2">Progress</h3>
+                    <p className="text-purple-100 dark:text-purple-200 mb-4">Overall completion rate</p>
+                    <div className="text-3xl font-bold">0%</div>
+                    <p className="text-sm text-purple-200 dark:text-purple-300">This month</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'goals' && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Goals</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Manage your accountability goals</p>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Your Goals</h2>
+                    <div className="relative">
+                      <button 
+                        className="px-4 py-2 rounded-lg transition-colors bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
+                      >
+                        + Add New Goal
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                      <h3 className="font-medium text-gray-800 dark:text-white mb-1">Exercise Daily</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Work out for 30 minutes</p>
+                    </div>
+                    <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                      <h3 className="font-medium text-gray-800 dark:text-white mb-1">Read Books</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Read for 20 minutes daily</p>
+                    </div>
+                    
+                    {userTier === 'free' && (
+                      <UpgradePrompt 
+                        feature="Unlock More Goals"
+                        description="Free plan is limited to 2 goals. Upgrade to Standard for up to 10 goals, or Premium for unlimited goals."
+                        size="medium"
+                        onUpgrade={handleUpgradeClick}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'progress' && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Progress</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Track your accountability journey</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Basic Progress */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Weekly Overview</h2>
+                    <div className="space-y-3">
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
+                        <div key={day} className="flex items-center justify-between">
+                          <span className="text-gray-600 dark:text-gray-400 font-medium">{day}</span>
+                          <div className="flex gap-1">
+                            {[1, 2, 3].map((goal) => (
+                              <div 
+                                key={goal}
+                                className={`w-6 h-6 rounded ${
+                                  index < 5 ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {index < 5 ? '3/3' : '0/3'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Advanced Analytics */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 relative">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Advanced Analytics</h2>
+                    {userTier === 'free' ? (
+                      <UpgradePrompt 
+                        feature="Advanced Analytics"
+                        description="Get detailed insights, trends, performance metrics, and custom charts with Standard or Premium plans."
+                        size="large"
+                        onUpgrade={handleUpgradeClick}
+                      />
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                          <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-2">Completion Trends</h3>
+                          <div className="h-32 bg-gradient-to-r from-blue-100 to-blue-200 dark:from-blue-800/40 dark:to-blue-700/40 rounded flex items-center justify-center">
+                            <span className="text-blue-600 dark:text-blue-400">📈 Interactive Chart</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-green-600 dark:text-green-400">0%</div>
+                            <div className="text-sm text-green-700 dark:text-green-400">Success Rate</div>
+                          </div>
+                          <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">0</div>
+                            <div className="text-sm text-purple-700 dark:text-purple-400">Best Streak</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Export Data Feature */}
+                <div className="mt-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Data Export</h2>
+                      <p className="text-gray-600 dark:text-gray-400">Download your progress data</p>
+                    </div>
+                    <div className="relative">
+                      <button 
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                          canExportData 
+                            ? 'bg-green-600 dark:bg-green-700 text-white hover:bg-green-700 dark:hover:bg-green-600' 
+                            : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                        }`}
+                        disabled={!canExportData}
+                      >
+                        Export Data
+                      </button>
+                      {!canExportData && userTier === 'free' && (
+                        <div className="mt-4">
+                          <UpgradePrompt 
+                            feature="Data Export"
+                            description="Export your progress data in CSV format with Standard or Premium plans."
+                            size="medium"
+                            onUpgrade={handleUpgradeClick}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'settings' && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Settings</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Customize your accountability experience</p>
+                  </div>
+                  <TierBadge tier={userTier} />
+                </div>
+
+                <div className="space-y-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Account</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                        <input 
+                          type="text" 
+                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          defaultValue={user?.name || ''}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                        <input 
+                          type="email" 
+                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-white"
+                          value={user?.email || ''}
+                          disabled
+                        />
+                      </div>
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                        <button
+                          onClick={async () => {
+                            await signOut();
+                            setCurrentScreen('welcome');
+                          }}
+                          className="w-full p-3 text-left text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Subscription Management */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Subscription</h2>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="font-medium text-gray-800 dark:text-white">Current Plan</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
+                      </div>
+                      <TierBadge tier={userTier} />
+                    </div>
+                    
+                    {userTier === 'free' && (
+                      <div className="space-y-3">
+                        <button className="w-full p-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
+                          Upgrade to Standard - $15/month
+                        </button>
+                        <button className="w-full p-3 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors">
+                          Upgrade to Premium - $35/month
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'checkins' && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Check-ins</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Track your daily accountability</p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Today's Check-in */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Today's Check-in</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">How did today go?</label>
+                        <textarea 
+                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          rows={3}
+                          placeholder="Reflect on your progress today..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rate your day (1-10)</label>
+                        <input 
+                          type="range" 
+                          min="1" 
+                          max="10" 
+                          className="w-full"
+                        />
+                      </div>
+                      <button className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
+                        Submit Check-in
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Recent Check-ins */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recent Check-ins</h2>
+                    <div className="space-y-3">
+                      {[...Array(5)].map((_, i) => (
+                        <div key={i} className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-gray-800 dark:text-white">Day {5-i}</span>
+                            <span className="text-sm text-gray-600 dark:text-gray-400">{new Date(Date.now() - i * 24 * 60 * 60 * 1000).toLocaleDateString()}</span>
+                          </div>
+                          <p className="text-gray-600 dark:text-gray-400 text-sm">Made good progress on my goals today. Feeling motivated!</p>
+                          <div className="mt-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Rating: </span>
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{8 - i}/10</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {userTier === 'free' && (
+                    <UpgradePrompt 
+                      feature="Advanced Check-ins"
+                      description="Get detailed analytics, mood tracking, habit insights, and custom reflection prompts with Standard or Premium plans."
+                      size="large"
+                      onUpgrade={handleUpgradeClick}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'admin' && isAdmin && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Admin Panel</h1>
+                    <p className="text-gray-600 dark:text-gray-400">System administration and debug information</p>
+                  </div>
+                  <TierBadge tier={userTier} />
+                </div>
+
+                <div className="space-y-6">
+                  {/* Admin Information */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Admin Information</h2>
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+                      <div className="text-sm text-red-700 dark:text-red-400 space-y-2">
+                        <p><strong>User ID:</strong> {user?.id || 'N/A'}</p>
+                        <p><strong>Email:</strong> {user?.email}</p>
+                        <p><strong>Name:</strong> {user?.name}</p>
+                        <p><strong>Admin Status:</strong> {isAdmin ? 'Yes' : 'No'}</p>
+                        <p><strong>User Tier:</strong> {userTier}</p>
+                        <p><strong>Account Created:</strong> {user?.createdAt ? new Date(user.createdAt).toLocaleString() : 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Feature Limits & Permissions */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Feature Limits & Permissions</h2>
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
+                      <div className="text-sm text-yellow-700 dark:text-yellow-400 space-y-2">
+                        <p><strong>Max Goals:</strong> {getFeatureLimit('maxGoals') === -1 ? 'Unlimited' : getFeatureLimit('maxGoals')}</p>
+                        <p><strong>Max Daily Check-ins:</strong> {getFeatureLimit('maxCheckInsPerDay') === -1 ? 'Unlimited' : getFeatureLimit('maxCheckInsPerDay')}</p>
+                        <p><strong>Can Use Advanced Analytics:</strong> {canAccessFeature('canUseAdvancedAnalytics') ? 'Yes' : 'No'}</p>
+                        <p><strong>Can Export Data:</strong> {canAccessFeature('canExportData') ? 'Yes' : 'No'}</p>
+                        <p><strong>Can Use Custom Reminders:</strong> {canAccessFeature('canUseCustomReminders') ? 'Yes' : 'No'}</p>
+                        <p><strong>Can Create Unlimited Goals:</strong> {canAccessFeature('canCreateUnlimitedGoals') ? 'Yes' : 'No'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* System Debug Info */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">System Debug Information</h2>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                      <div className="text-sm text-blue-700 dark:text-blue-400 space-y-2">
+                        <p><strong>Environment:</strong> {process.env.NODE_ENV || 'development'}</p>
+                        <p><strong>Firebase Project:</strong> {process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'Not configured'}</p>
+                        <p><strong>Current Theme:</strong> {document.documentElement.classList.contains('dark') ? 'Dark' : 'Light'}</p>
+                        <p><strong>User Agent:</strong> {typeof window !== 'undefined' ? window.navigator.userAgent.substring(0, 50) + '...' : 'N/A'}</p>
+                        <p><strong>Screen Resolution:</strong> {typeof window !== 'undefined' ? `${window.screen.width}x${window.screen.height}` : 'N/A'}</p>
+                        <p><strong>Current Time:</strong> {new Date().toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Actions */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Quick Actions</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <button className="p-4 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors">
+                        Clear Cache
+                      </button>
+                      <button className="p-4 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
+                        Export User Data
+                      </button>
+                      <button className="p-4 bg-orange-600 dark:bg-orange-700 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors">
+                        Reset User Preferences
+                      </button>
+                      <button className="p-4 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors">
+                        View System Logs
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  const renderSignupScreen = () => (
-    <div className="min-h-screen bg-white flex flex-col">
-      <div className="px-8 py-12">
-        <button 
-          onClick={() => setCurrentScreen('onboarding')}
-          className="flex items-center text-gray-500 hover:text-gray-700 mb-8"
-        >
-          <ArrowLeft className="w-5 h-5 mr-1" />
-          Back
-        </button>
+  // Main render logic
+  if (user) {
+    return renderDashboard();
+  }
 
-        <div className="text-center mb-8">
-          <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-4 rounded-xl w-16 h-16 mx-auto mb-6 flex items-center justify-center">
-            <Target className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Your Account</h2>
-          <p className="text-gray-600">Join thousands achieving their goals</p>
-        </div>
-
-        <div className="space-y-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-            <input
-              type="text"
-              placeholder="Enter your full name"
-              className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              value={signupForm.name}
-              onChange={(e) => setSignupForm({...signupForm, name: e.target.value})}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                value={signupForm.email}
-                onChange={(e) => setSignupForm({...signupForm, email: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Create a strong password"
-                className="w-full pl-12 pr-12 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                value={signupForm.password}
-                onChange={(e) => setSignupForm({...signupForm, password: e.target.value})}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-4 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setCurrentScreen('planSelection')}
-          className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-4 px-6 rounded-xl font-semibold text-lg hover:opacity-90 transition-opacity mb-6"
-        >
-          Create Account
-        </button>
-
-        <div className="text-center">
-          <p className="text-gray-600 mb-4">Or continue with</p>
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <button className="flex items-center justify-center py-3 px-4 border border-gray-300 rounded-xl hover:bg-gray-50">
-              <div className="w-5 h-5 bg-blue-600 rounded mr-2"></div>
-              <span className="font-medium">Google</span>
-            </button>
-            <button className="flex items-center justify-center py-3 px-4 border border-gray-300 rounded-xl hover:bg-gray-50">
-              <div className="w-5 h-5 bg-black rounded mr-2"></div>
-              <span className="font-medium">Apple</span>
-            </button>
-          </div>
-
-          <p className="text-gray-600">
-            Already have an account?{' '}
-            <button 
-              onClick={() => setCurrentScreen('login')}
-              className="text-purple-600 font-semibold hover:underline"
-            >
-              Sign In
-            </button>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderLoginScreen = () => (
-    <div className="min-h-screen bg-white flex flex-col justify-center">
-      <div className="px-8">
-        <button 
-          onClick={() => setCurrentScreen('welcome')}
-          className="flex items-center text-gray-500 hover:text-gray-700 mb-8"
-        >
-          <ArrowLeft className="w-5 h-5 mr-1" />
-          Back
-        </button>
-
-        <div className="text-center mb-8">
-          <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-4 rounded-xl w-16 h-16 mx-auto mb-6 flex items-center justify-center">
-            <Target className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-          <p className="text-gray-600">Sign in to continue your journey</p>
-        </div>
-
-        <div className="space-y-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                value={loginForm.email}
-                onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Enter your password"
-                className="w-full pl-12 pr-12 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-4 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="flex items-center">
-              <input type="checkbox" className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500" />
-              <span className="ml-2 text-sm text-gray-600">Remember me</span>
-            </label>
-            <button className="text-sm text-purple-600 hover:underline">
-              Forgot password?
-            </button>
-          </div>
-        </div>
-
-        <button
-          onClick={() => alert('Login successful! (This would connect to your Firebase auth)')}
-          className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-4 px-6 rounded-xl font-semibold text-lg hover:opacity-90 transition-opacity mb-6"
-        >
-          Sign In
-        </button>
-
-        <div className="text-center">
-          <p className="text-gray-600">
-            Don&apos;t have an account?{' '}
-            <button 
-              onClick={() => setCurrentScreen('signup')}
-              className="text-purple-600 font-semibold hover:underline"
-            >
-              Sign Up
-            </button>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderPlanSelection = () => (
-    <div className="min-h-screen bg-gray-50">
-      <div className="px-8 py-12">
-        <button 
-          onClick={() => setCurrentScreen('signup')}
-          className="flex items-center text-gray-500 hover:text-gray-700 mb-8"
-        >
-          <ArrowLeft className="w-5 h-5 mr-1" />
-          Back
-        </button>
-
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Choose Your Plan</h2>
-          <p className="text-gray-600">Start free, upgrade anytime</p>
-        </div>
-
-        <div className="space-y-4 mb-8">
-          {[
-            {
-              name: 'Free',
-              price: '£0',
-              period: 'Forever',
-              features: ['Basic habit tracking', 'Streaks & XP', 'Simple reminders'],
-              color: 'border-gray-200',
-              popular: false
-            },
-            {
-              name: 'Standard',
-              price: '£4.99',
-              period: 'per month',
-              features: ['Everything in Free', 'Daily AI WhatsApp check-ins', 'Weekly progress reports', 'Smart insights'],
-              color: 'border-blue-500 ring-2 ring-blue-100',
-              popular: true
-            },
-            {
-              name: 'Premium',
-              price: '£14.99',
-              period: 'per month',
-              features: ['Everything in Standard', 'Custom AI coaching', 'Voice notes', 'Human coach support'],
-              color: 'border-purple-500',
-              popular: false
-            }
-          ].map((plan, idx) => (
-            <div key={idx} className={`relative bg-white rounded-2xl p-6 border-2 ${plan.color}`}>
-              {plan.popular && (
-                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                  <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-medium">
-                    Most Popular
-                  </span>
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold">{plan.name}</h3>
-                  <div className="text-2xl font-bold">
-                    {plan.price}
-                    <span className="text-sm font-normal text-gray-500">/{plan.period}</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => alert(`Selected ${plan.name} plan! This would connect to payment processing.`)}
-                  className={`px-6 py-2 rounded-lg font-medium ${
-                    plan.popular 
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                      : 'bg-purple-600 text-white hover:bg-purple-700'
-                  }`}
-                >
-                  {idx === 0 ? 'Start Free' : 'Choose Plan'}
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {plan.features.map((feature, fidx) => (
-                  <div key={fidx} className="flex items-center">
-                    <CheckCircle className="w-4 h-4 text-green-500 mr-3 flex-shrink-0" />
-                    <span className="text-sm text-gray-700">{feature}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="text-center text-sm text-gray-500">
-          <p>Free 7-day trial for paid plans • Cancel anytime</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Screen routing
   switch (currentScreen) {
-    case 'splash':
-      return renderSplashScreen();
-    case 'welcome':
-      return renderWelcomeScreen();
-    case 'onboarding':
-      return renderOnboardingScreen();
-    case 'signup':
-      return renderSignupScreen();
     case 'login':
       return renderLoginScreen();
-    case 'planSelection':
-      return renderPlanSelection();
+    case 'signup':
+      return renderSignupScreen();
     default:
-      return renderSplashScreen();
+      return renderWelcomeScreen();
   }
 };
 
