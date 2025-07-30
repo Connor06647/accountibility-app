@@ -43,9 +43,9 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
         <span className="text-xs text-gray-600 dark:text-gray-400">{description}</span>
         <button
           onClick={handleUpgrade}
-          className="px-2 py-1 text-white rounded text-xs transition-all bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
+          className="px-3 py-1 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium text-xs shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
         >
-          Upgrade Now
+          ✨ Upgrade Now
         </button>
       </div>
     );
@@ -68,9 +68,9 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleUpgrade}
-                className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg text-sm font-medium hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors shadow-sm"
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
-                Upgrade Now
+                ✨ Upgrade Now
               </button>
             </div>
           </div>
@@ -97,9 +97,9 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
         <div className="flex-shrink-0">
           <button
             onClick={handleUpgrade}
-            className="px-4 py-2 bg-amber-600 dark:bg-amber-700 text-white rounded-lg text-sm font-medium hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors"
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium text-sm shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
           >
-            Upgrade Now
+            ✨ Upgrade Now
           </button>
         </div>
       </div>

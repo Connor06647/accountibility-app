@@ -206,11 +206,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getFeatureLimit = (feature: string): number | null => {
-    if (userTier === 'premium') return null; // No limits
+    if (userTier === 'premium') return -1; // Unlimited (return -1 instead of null for clarity)
 
     switch (feature) {
       case 'goals':
-        return userTier === 'free' ? 3 : 10;
+        return userTier === 'free' ? 2 : 10;
       case 'tags':
         return userTier === 'free' ? 5 : 20;
       case 'exports':

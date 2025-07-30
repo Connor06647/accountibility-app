@@ -14,6 +14,22 @@ const AccountabilityApp: React.FC = () => {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [themeDialogOpen, setThemeDialogOpen] = useState(false);
 
+  // Goals functionality state
+  const [goals, setGoals] = useState([
+    { id: 1, title: 'Exercise Daily', description: 'Work out for 30 minutes', status: 'active', progress: 65, completed: false }
+  ]);
+  const [showAddGoal, setShowAddGoal] = useState(false);
+  const [newGoal, setNewGoal] = useState({ title: '', description: '' });
+
+  // Check-ins functionality state
+  const [checkIns, setCheckIns] = useState([
+    { id: 1, date: new Date().toISOString().split('T')[0], rating: 8, reflection: 'Made good progress on my goals today. Feeling motivated!', completed: true },
+    { id: 2, date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0], rating: 7, reflection: 'Good day overall, stayed consistent.', completed: true },
+    { id: 3, date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], rating: 6, reflection: 'Had some challenges but pushed through.', completed: true }
+  ]);
+  const [todayCheckIn, setTodayCheckIn] = useState({ rating: 5, reflection: '' });
+  const [hasCheckedInToday, setHasCheckedInToday] = useState(false);
+
   useEffect(() => {
     if (user) {
       setCurrentScreen('dashboard');
@@ -112,7 +128,7 @@ const AccountabilityApp: React.FC = () => {
                 type="email"
                 value={loginForm.email}
                 onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
                 required
               />
             </div>
@@ -122,14 +138,14 @@ const AccountabilityApp: React.FC = () => {
                 type="password"
                 value={loginForm.password}
                 onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
                 required
               />
             </div>
             <button
               type="submit"
               disabled={submitLoading}
-              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none"
             >
               {submitLoading ? 'Signing In...' : 'Sign In'}
             </button>
@@ -147,7 +163,7 @@ const AccountabilityApp: React.FC = () => {
             <button
               onClick={handleGoogleSignIn}
               disabled={submitLoading}
-              className="mt-3 w-full px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+              className="mt-3 w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
             >
               🔍 Sign in with Google
             </button>
@@ -188,7 +204,7 @@ const AccountabilityApp: React.FC = () => {
                 type="text"
                 value={signupForm.name}
                 onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
                 required
               />
             </div>
@@ -198,7 +214,7 @@ const AccountabilityApp: React.FC = () => {
                 type="email"
                 value={signupForm.email}
                 onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
                 required
               />
             </div>
@@ -208,14 +224,14 @@ const AccountabilityApp: React.FC = () => {
                 type="password"
                 value={signupForm.password}
                 onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
                 required
               />
             </div>
             <button
               type="submit"
               disabled={submitLoading}
-              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none"
             >
               {submitLoading ? 'Creating Account...' : 'Create Account'}
             </button>
@@ -233,7 +249,7 @@ const AccountabilityApp: React.FC = () => {
             <button
               onClick={handleGoogleSignIn}
               disabled={submitLoading}
-              className="mt-3 w-full px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+              className="mt-3 w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
             >
               🔍 Sign up with Google
             </button>
@@ -253,10 +269,73 @@ const AccountabilityApp: React.FC = () => {
     </div>
   );
 
+  // Functionality handlers
+  const handleAddGoal = () => {
+    if (newGoal.title.trim() && newGoal.description.trim()) {
+      const goal = {
+        id: Date.now(),
+        title: newGoal.title.trim(),
+        description: newGoal.description.trim(),
+        status: 'active' as const,
+        progress: 0,
+        completed: false
+      };
+      setGoals([...goals, goal]);
+      setNewGoal({ title: '', description: '' });
+      setShowAddGoal(false);
+    }
+  };
+
+  const handleDeleteGoal = (goalId: number) => {
+    setGoals(goals.filter(goal => goal.id !== goalId));
+  };
+
+  const handleToggleGoal = (goalId: number) => {
+    setGoals(goals.map(goal => 
+      goal.id === goalId 
+        ? { ...goal, completed: !goal.completed, progress: !goal.completed ? 100 : 0 }
+        : goal
+    ));
+  };
+
+  const handleSubmitCheckIn = () => {
+    if (todayCheckIn.reflection.trim() && !hasCheckedInToday) {
+      const checkIn = {
+        id: Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        rating: todayCheckIn.rating,
+        reflection: todayCheckIn.reflection.trim(),
+        completed: true
+      };
+      setCheckIns([checkIn, ...checkIns]);
+      setTodayCheckIn({ rating: 5, reflection: '' });
+      setHasCheckedInToday(true);
+    }
+  };
+
+  const handleExportData = () => {
+    const data = {
+      goals,
+      checkIns,
+      user: { name: user?.name, email: user?.email },
+      exportDate: new Date().toISOString()
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `accountability-data-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Dashboard with tiered features
   const renderDashboard = () => {
-    const maxGoals = getFeatureLimit('maxGoals') || 0;
-    const currentGoals = 0; // This would come from actual data
+    const maxGoals = getFeatureLimit('goals') || 0;
+    const currentGoals = goals.length; // Count all goals (active + completed)
     const canAddMoreGoals = maxGoals === -1 || currentGoals < maxGoals;
     const canUseAdvancedAnalytics = canAccessFeature('canUseAdvancedAnalytics');
     const canExportData = canAccessFeature('canExportData');
@@ -272,7 +351,7 @@ const AccountabilityApp: React.FC = () => {
         <div className="flex">
           {/* Sidebar */}
           <div className="w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-b border-blue-200 dark:border-blue-700">
               <div className="flex items-center justify-between">
                 <h1 className="text-xl font-bold text-gray-800 dark:text-white">Accountability</h1>
                 <TierBadge tier={userTier} />
@@ -286,6 +365,7 @@ const AccountabilityApp: React.FC = () => {
                   { id: 'goals', label: 'Goals', icon: '🎯' },
                   { id: 'checkins', label: 'Check-ins', icon: '✅' },
                   { id: 'progress', label: 'Progress', icon: '📊' },
+                  { id: 'subscription', label: 'Subscription', icon: '💎' },
                   { id: 'settings', label: 'Settings', icon: '⚙️' },
                   ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: '🔧' }] : []),
                 ].map((item) => (
@@ -305,7 +385,7 @@ const AccountabilityApp: React.FC = () => {
                 {/* Theme selector item */}
                 <button
                   onClick={() => setThemeDialogOpen(true)}
-                  className="w-full text-left p-3 rounded-lg transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 mt-4 border-t border-gray-200 dark:border-gray-700 pt-4"
+                  className="w-full text-left p-3 rounded-lg transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 mt-4 border-t border-blue-200 dark:border-blue-700 pt-4"
                   aria-label="Select theme"
                 >
                   <span className="mr-3">🌓</span> Theme
@@ -316,15 +396,16 @@ const AccountabilityApp: React.FC = () => {
 
           {/* Main Content */}
           <div className="flex-1 p-8">
-            {currentPage === 'dashboard' && (
-              <div>
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Welcome back, {user?.name}!</h1>
+            <div className="transition-all duration-300 ease-in-out">
+              {currentPage === 'dashboard' && (
+                <div className="animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between mb-8">
+                    <div>
+                      <div className="flex items-center gap-3 mb-2">
+                        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Welcome back, {user?.name}!</h1>
+                      </div>
+                      <p className="text-gray-600 dark:text-gray-400">Ready to stay accountable today?</p>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400">Ready to stay accountable today?</p>
-                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={async () => {
@@ -343,26 +424,56 @@ const AccountabilityApp: React.FC = () => {
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-6 mb-8">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-4">Your Usage</h3>
-                        <div className="grid grid-cols-2 gap-6">
-                          <FeatureLimit 
-                            current={currentGoals} 
-                            limit={maxGoals} 
-                            label="Active Goals" 
-                          />
-                          <FeatureLimit 
-                            current={0} 
-                            limit={30} 
-                            label="Check-ins this month" 
-                          />
+                        <div className="flex items-center gap-2 mb-4">
+                          <h3 className="font-semibold text-blue-800 dark:text-blue-400">Free Plan Usage</h3>
+                          <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs font-medium">
+                            Current Plan
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Goals Limit</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{currentGoals}/{maxGoals}</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
+                                style={{ width: `${maxGoals > 0 ? (currentGoals / maxGoals) * 100 : 0}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {maxGoals - currentGoals <= 0 ? '0 goals remaining' : `${maxGoals - currentGoals} goals remaining`}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Check-ins</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{checkIns.length}/30</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                              <div 
+                                className="bg-green-600 dark:bg-green-500 h-2 rounded-full transition-all"
+                                style={{ width: `${Math.min((checkIns.length / 30) * 100, 100)}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {Math.max(30 - checkIns.length, 0)} check-ins remaining this month
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                          <p className="text-sm text-blue-800 dark:text-blue-400">
+                            💡 <strong>Upgrade benefits:</strong> Unlimited goals, advanced analytics, data export, and priority support.
+                          </p>
                         </div>
                       </div>
                       <div className="ml-6">
                         <button 
                           onClick={handleUpgradeClick}
-                          className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all text-sm font-medium"
+                          className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                         >
-                          Upgrade Now
+                          ✨ Upgrade Now
                         </button>
                       </div>
                     </div>
@@ -372,18 +483,20 @@ const AccountabilityApp: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Daily Goals Card */}
                   <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-xl p-6 text-white">
-                    <h3 className="text-xl font-semibold mb-2">Daily Goals</h3>
-                    <p className="text-blue-100 dark:text-blue-200 mb-4">Track your daily objectives</p>
-                    <div className="text-3xl font-bold">0/0</div>
-                    <p className="text-sm text-blue-200 dark:text-blue-300">Goals completed today</p>
+                    <h3 className="text-xl font-semibold mb-2">Active Goals</h3>
+                    <p className="text-blue-100 dark:text-blue-200 mb-4">Goals in progress</p>
+                    <div className="text-3xl font-bold">{goals.filter(g => !g.completed).length}</div>
+                    <p className="text-sm text-blue-200 dark:text-blue-300">
+                      {goals.filter(g => !g.completed).length === 1 ? 'goal' : 'goals'} active • {goals.filter(g => g.completed).length} completed
+                    </p>
                   </div>
 
                   {/* Streak Card */}
                   <div className="bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-xl p-6 text-white">
                     <h3 className="text-xl font-semibold mb-2">Streak</h3>
                     <p className="text-green-100 dark:text-green-200 mb-4">Your consistency record</p>
-                    <div className="text-3xl font-bold">0</div>
-                    <p className="text-sm text-green-200 dark:text-green-300">Days in a row</p>
+                    <div className="text-3xl font-bold">{checkIns.length}</div>
+                    <p className="text-sm text-green-200 dark:text-green-300">Total check-ins</p>
                   </div>
 
                   {/* Progress Card */}
@@ -411,22 +524,106 @@ const AccountabilityApp: React.FC = () => {
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Your Goals</h2>
                     <div className="relative">
                       <button 
-                        className="px-4 py-2 rounded-lg transition-colors bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
+                        onClick={() => setShowAddGoal(true)}
+                        disabled={!canAddMoreGoals}
+                        className={`px-4 py-2 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-[1.02] ${
+                          canAddMoreGoals 
+                            ? 'bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600 hover:shadow-lg' 
+                            : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed hover:scale-100'
+                        }`}
                       >
                         + Add New Goal
                       </button>
+                      {!canAddMoreGoals && userTier === 'free' && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          Goal Limit: {currentGoals}/{maxGoals}
+                        </p>
+                      )}
                     </div>
                   </div>
 
+                  {/* Add Goal Form */}
+                  {showAddGoal && (
+                    <div className="mb-6 p-4 border border-blue-200 dark:border-blue-700 rounded-lg bg-blue-50 dark:bg-blue-900/20 animate-in slide-in-from-top duration-300">
+                      <h3 className="font-medium text-gray-800 dark:text-white mb-3">Add New Goal</h3>
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          placeholder="Goal title..."
+                          value={newGoal.title}
+                          onChange={(e) => setNewGoal({ ...newGoal, title: e.target.value })}
+                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
+                        />
+                        <textarea
+                          placeholder="Goal description..."
+                          value={newGoal.description}
+                          onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
+                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
+                          rows={2}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleAddGoal}
+                            className="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg"
+                          >
+                            Add Goal
+                          </button>
+                          <button
+                            onClick={() => setShowAddGoal(false)}
+                            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-all duration-200 ease-in-out transform hover:scale-[1.02]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-3">
-                    <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
-                      <h3 className="font-medium text-gray-800 dark:text-white mb-1">Exercise Daily</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Work out for 30 minutes</p>
-                    </div>
-                    <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
-                      <h3 className="font-medium text-gray-800 dark:text-white mb-1">Read Books</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Read for 20 minutes daily</p>
-                    </div>
+                    {goals.map((goal) => (
+                      <div key={goal.id} className={`p-4 border border-blue-200 dark:border-blue-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md ${goal.completed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700 animate-pulse' : 'hover:bg-blue-50 dark:hover:bg-blue-900/10'}`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="flex items-center mt-1">
+                              <input
+                                type="checkbox"
+                                checked={goal.completed}
+                                onChange={() => handleToggleGoal(goal.id)}
+                                className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 transition-all duration-200 ease-in-out transform hover:scale-110"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <h3 className={`font-medium mb-1 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-white'}`}>
+                                {goal.title}
+                              </h3>
+                              <p className={`text-sm mb-2 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-400'}`}>
+                                {goal.description}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-2 overflow-hidden">
+                                  <div 
+                                    className={`h-2 rounded-full transition-all duration-500 ease-out ${goal.completed ? 'bg-green-500 dark:bg-green-400 animate-pulse' : 'bg-blue-600 dark:bg-blue-500'}`}
+                                    style={{ width: `${goal.progress}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors duration-300">{goal.progress}%</span>
+                                {goal.completed && (
+                                  <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-1 rounded-full animate-in slide-in-from-right duration-300">
+                                    ✓ Completed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteGoal(goal.id)}
+                            className="ml-4 px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all duration-200 ease-in-out transform hover:scale-110"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                     
                     {userTier === 'free' && (
                       <UpgradePrompt 
@@ -455,24 +652,36 @@ const AccountabilityApp: React.FC = () => {
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Weekly Overview</h2>
                     <div className="space-y-3">
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
-                        <div key={day} className="flex items-center justify-between">
-                          <span className="text-gray-600 dark:text-gray-400 font-medium">{day}</span>
-                          <div className="flex gap-1">
-                            {[1, 2, 3].map((goal) => (
-                              <div 
-                                key={goal}
-                                className={`w-6 h-6 rounded ${
-                                  index < 5 ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
-                                }`}
-                              />
-                            ))}
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+                        const dayDate = new Date();
+                        dayDate.setDate(dayDate.getDate() - (6 - index));
+                        const dateString = dayDate.toDateString();
+                        const hasCheckIn = checkIns.some(checkIn => 
+                          new Date(checkIn.date).toDateString() === dateString
+                        );
+                        
+                        return (
+                          <div key={day} className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400 font-medium">{day}</span>
+                            <div className="flex gap-1">
+                              {goals.slice(0, 3).map((goal, goalIndex) => (
+                                <div 
+                                  key={goalIndex}
+                                  className={`w-6 h-6 rounded ${
+                                    hasCheckIn && goal.progress > 0 ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
+                                  }`}
+                                />
+                              ))}
+                              {goals.length === 0 && (
+                                <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600" />
+                              )}
+                            </div>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {hasCheckIn ? `${Math.min(goals.length, 3)}/${Math.max(goals.length, 1)}` : '0/1'}
+                            </span>
                           </div>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {index < 5 ? '3/3' : '0/3'}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -496,12 +705,14 @@ const AccountabilityApp: React.FC = () => {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
-                            <div className="text-2xl font-bold text-green-600 dark:text-green-400">0%</div>
-                            <div className="text-sm text-green-700 dark:text-green-400">Success Rate</div>
+                            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                              {checkIns.length > 0 ? Math.round((checkIns.reduce((sum, checkIn) => sum + checkIn.rating, 0) / checkIns.length / 10) * 100) : 0}%
+                            </div>
+                            <div className="text-sm text-green-700 dark:text-green-400">Avg Rating</div>
                           </div>
                           <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center">
-                            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">0</div>
-                            <div className="text-sm text-purple-700 dark:text-purple-400">Best Streak</div>
+                            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{checkIns.length}</div>
+                            <div className="text-sm text-purple-700 dark:text-purple-400">Total Check-ins</div>
                           </div>
                         </div>
                       </div>
@@ -561,7 +772,7 @@ const AccountabilityApp: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                         <input 
                           type="text" 
-                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           defaultValue={user?.name || ''}
                         />
                       </div>
@@ -569,12 +780,12 @@ const AccountabilityApp: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                         <input 
                           type="email" 
-                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-white"
+                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-white"
                           value={user?.email || ''}
                           disabled
                         />
                       </div>
-                      <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                      <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
                         <button
                           onClick={async () => {
                             await signOut();
@@ -586,29 +797,6 @@ const AccountabilityApp: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Subscription Management */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Subscription</h2>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <div className="font-medium text-gray-800 dark:text-white">Current Plan</div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
-                      </div>
-                      <TierBadge tier={userTier} />
-                    </div>
-                    
-                    {userTier === 'free' && (
-                      <div className="space-y-3">
-                        <button className="w-full p-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
-                          Upgrade to Standard - $15/month
-                        </button>
-                        <button className="w-full p-3 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors">
-                          Upgrade to Premium - $35/month
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -625,50 +813,75 @@ const AccountabilityApp: React.FC = () => {
 
                 <div className="space-y-6">
                   {/* Today's Check-in */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Today's Check-in</h2>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">How did today go?</label>
-                        <textarea 
-                          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          rows={3}
-                          placeholder="Reflect on your progress today..."
-                        />
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 transition-all duration-300 ease-in-out hover:shadow-2xl">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                      {hasCheckedInToday ? "Today's Check-in Complete ✅" : "Today's Check-in"}
+                    </h2>
+                    {!hasCheckedInToday ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">How did today go?</label>
+                          <textarea 
+                            value={todayCheckIn.reflection}
+                            onChange={(e) => setTodayCheckIn({ ...todayCheckIn, reflection: e.target.value })}
+                            className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
+                            rows={3}
+                            placeholder="Reflect on your progress today..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Rate your day: {todayCheckIn.rating}/10
+                          </label>
+                          <input 
+                            type="range" 
+                            min="1" 
+                            max="10" 
+                            value={todayCheckIn.rating}
+                            onChange={(e) => setTodayCheckIn({ ...todayCheckIn, rating: parseInt(e.target.value) })}
+                            className="w-full transition-all duration-200 ease-in-out hover:scale-[1.02]"
+                          />
+                        </div>
+                        <button 
+                          onClick={handleSubmitCheckIn}
+                          disabled={!todayCheckIn.reflection.trim()}
+                          className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
+                        >
+                          Submit Check-in
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rate your day (1-10)</label>
-                        <input 
-                          type="range" 
-                          min="1" 
-                          max="10" 
-                          className="w-full"
-                        />
+                    ) : (
+                      <div className="text-center py-8 animate-in fade-in duration-500">
+                        <div className="text-6xl mb-4 animate-bounce">🎉</div>
+                        <p className="text-gray-600 dark:text-gray-400">You've already checked in today! Come back tomorrow.</p>
                       </div>
-                      <button className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
-                        Submit Check-in
-                      </button>
-                    </div>
+                    )}
                   </div>
 
                   {/* Recent Check-ins */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 transition-all duration-300 ease-in-out hover:shadow-2xl">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recent Check-ins</h2>
-                    <div className="space-y-3">
-                      {[...Array(5)].map((_, i) => (
-                        <div key={i} className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-medium text-gray-800 dark:text-white">Day {5-i}</span>
-                            <span className="text-sm text-gray-600 dark:text-gray-400">{new Date(Date.now() - i * 24 * 60 * 60 * 1000).toLocaleDateString()}</span>
+                    {checkIns.length === 0 ? (
+                      <div className="text-center py-8">
+                        <div className="text-6xl mb-4">📝</div>
+                        <p className="text-gray-600 dark:text-gray-400">No check-ins yet. Submit your first one above!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {checkIns.slice(0, 5).map((checkIn, index) => (
+                          <div key={checkIn.id} className="p-4 border border-blue-200 dark:border-blue-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/10"
+                               style={{ animationDelay: `${index * 100}ms` }}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-gray-800 dark:text-white">{checkIn.date}</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400 transition-colors duration-300">
+                                Rating: {checkIn.rating}/10
+                              </span>
+                            </div>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm transition-colors duration-300">{checkIn.reflection}</p>
                           </div>
-                          <p className="text-gray-600 dark:text-gray-400 text-sm">Made good progress on my goals today. Feeling motivated!</p>
-                          <div className="mt-2">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">Rating: </span>
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{8 - i}/10</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   {userTier === 'free' && (
@@ -683,83 +896,476 @@ const AccountabilityApp: React.FC = () => {
               </div>
             )}
 
-            {currentPage === 'admin' && isAdmin && (
+            {currentPage === 'subscription' && (
               <div>
                 <div className="flex items-center justify-between mb-8">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Admin Panel</h1>
-                    <p className="text-gray-600 dark:text-gray-400">System administration and debug information</p>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Subscription</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Manage your subscription and billing</p>
                   </div>
                   <TierBadge tier={userTier} />
                 </div>
 
                 <div className="space-y-6">
-                  {/* Admin Information */}
+                  {/* Current Plan Overview */}
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Admin Information</h2>
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
-                      <div className="text-sm text-red-700 dark:text-red-400 space-y-2">
-                        <p><strong>User ID:</strong> {user?.id || 'N/A'}</p>
-                        <p><strong>Email:</strong> {user?.email}</p>
-                        <p><strong>Name:</strong> {user?.name}</p>
-                        <p><strong>Admin Status:</strong> {isAdmin ? 'Yes' : 'No'}</p>
-                        <p><strong>User Tier:</strong> {userTier}</p>
-                        <p><strong>Account Created:</strong> {user?.createdAt ? new Date(user.createdAt).toLocaleString() : 'N/A'}</p>
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Current Plan</h2>
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <div className="font-medium text-gray-800 dark:text-white text-lg">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          {userTier === 'free' ? 'Limited features - Upgrade for full access' : 
+                           userTier === 'standard' ? '$15/month - Great for individuals' :
+                           '$35/month - Perfect for power users'}
+                        </div>
+                      </div>
+                      <TierBadge tier={userTier} />
+                    </div>
+
+                    {/* Plan Features */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h3 className="font-medium text-gray-800 dark:text-white mb-3">What's Included</h3>
+                        <ul className="space-y-2">
+                          {userTier === 'free' && (
+                            <>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Up to 2 goals
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Basic check-ins
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Basic progress tracking
+                              </li>
+                              <li className="flex items-center text-sm text-gray-400 dark:text-gray-500">
+                                <span className="text-gray-400 mr-2">✗</span> Advanced analytics
+                              </li>
+                              <li className="flex items-center text-sm text-gray-400 dark:text-gray-500">
+                                <span className="text-gray-400 mr-2">✗</span> Data export
+                              </li>
+                            </>
+                          )}
+                          {userTier === 'standard' && (
+                            <>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Up to 10 goals
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Advanced check-ins
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Advanced analytics
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Data export
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Priority support
+                              </li>
+                            </>
+                          )}
+                          {userTier === 'premium' && (
+                            <>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Unlimited goals
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Advanced check-ins
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Advanced analytics
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Data export
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Priority support
+                              </li>
+                              <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                <span className="text-green-500 mr-2">✓</span> Custom integrations
+                              </li>
+                            </>
+                          )}
+                        </ul>
+                      </div>
+                      
+                      <div>
+                        <h3 className="font-medium text-gray-800 dark:text-white mb-3">Usage This Month</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600 dark:text-gray-400">Goals</span>
+                              <span className="text-gray-800 dark:text-white">{goals.length}/{userTier === 'free' ? '2' : userTier === 'standard' ? '10' : '∞'}</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mt-1">
+                              <div 
+                                className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full"
+                                style={{ width: `${userTier === 'premium' ? 25 : Math.min((goals.length / (userTier === 'free' ? 2 : 10)) * 100, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600 dark:text-gray-400">Check-ins</span>
+                              <span className="text-gray-800 dark:text-white">{checkIns.length}/30</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mt-1">
+                              <div 
+                                className="bg-green-600 dark:bg-green-500 h-2 rounded-full"
+                                style={{ width: `${Math.min((checkIns.length / 30) * 100, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Feature Limits & Permissions */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Feature Limits & Permissions</h2>
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                      <div className="text-sm text-yellow-700 dark:text-yellow-400 space-y-2">
-                        <p><strong>Max Goals:</strong> {getFeatureLimit('maxGoals') === -1 ? 'Unlimited' : getFeatureLimit('maxGoals')}</p>
-                        <p><strong>Max Daily Check-ins:</strong> {getFeatureLimit('maxCheckInsPerDay') === -1 ? 'Unlimited' : getFeatureLimit('maxCheckInsPerDay')}</p>
-                        <p><strong>Can Use Advanced Analytics:</strong> {canAccessFeature('canUseAdvancedAnalytics') ? 'Yes' : 'No'}</p>
-                        <p><strong>Can Export Data:</strong> {canAccessFeature('canExportData') ? 'Yes' : 'No'}</p>
-                        <p><strong>Can Use Custom Reminders:</strong> {canAccessFeature('canUseCustomReminders') ? 'Yes' : 'No'}</p>
-                        <p><strong>Can Create Unlimited Goals:</strong> {canAccessFeature('canCreateUnlimitedGoals') ? 'Yes' : 'No'}</p>
+                  {/* Upgrade Options */}
+                  {userTier === 'free' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Standard Plan */}
+                      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-blue-200 dark:border-blue-700">
+                        <div className="text-center mb-6">
+                          <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Standard Plan</h3>
+                          <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">$15</div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">per month</div>
+                        </div>
+                        <ul className="space-y-2 mb-6">
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Up to 10 goals</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Advanced analytics</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Data export</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Priority support</span>
+                          </li>
+                        </ul>
+                        <button className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                          ✨ Upgrade to Standard
+                        </button>
+                      </div>
+
+                      {/* Premium Plan */}
+                      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-purple-200 dark:border-purple-700 relative">
+                        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                          <span className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+                            Most Popular
+                          </span>
+                        </div>
+                        <div className="text-center mb-6">
+                          <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Premium Plan</h3>
+                          <div className="text-3xl font-bold text-purple-600 dark:text-purple-400 mb-1">$35</div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">per month</div>
+                        </div>
+                        <ul className="space-y-2 mb-6">
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Unlimited goals</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Advanced analytics</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Data export</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Priority support</span>
+                          </li>
+                          <li className="flex items-center text-sm">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span className="text-gray-600 dark:text-gray-400">Custom integrations</span>
+                          </li>
+                        </ul>
+                        <button className="w-full px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 dark:hover:from-purple-500 dark:hover:to-purple-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                          ✨ Upgrade to Premium
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Billing History */}
+                  {userTier !== 'free' && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Billing History</h2>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-800 dark:text-white">July 2025</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '15.00' : '35.00'}</div>
+                            <div className="text-sm text-green-600 dark:text-green-400">Paid</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-800 dark:text-white">June 2025</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '15.00' : '35.00'}</div>
+                            <div className="text-sm text-green-600 dark:text-green-400">Paid</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manage Subscription */}
+                  {userTier !== 'free' && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Manage Subscription</h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button className="px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                          Update Payment Method
+                        </button>
+                        <button className="px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                          Download Invoices
+                        </button>
+                        <button className="px-4 py-2 border border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                          Pause Subscription
+                        </button>
+                        <button className="px-4 py-2 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          Cancel Subscription
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {currentPage === 'admin' && isAdmin && (
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Admin Control Center</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Manage system settings, monitor performance, and oversee user operations</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <TierBadge tier={userTier} />
+                    <div className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-full text-sm font-medium">
+                      Admin Access
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                  {/* System Status Cards */}
+                  <div className="bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-xl p-6 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-semibold mb-2">System Status</h3>
+                        <div className="text-3xl font-bold">Online</div>
+                        <p className="text-green-100 dark:text-green-200 text-sm">All services operational</p>
+                      </div>
+                      <div className="text-4xl opacity-80">🟢</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-xl p-6 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-semibold mb-2">Total Users</h3>
+                        <div className="text-3xl font-bold">1,247</div>
+                        <p className="text-blue-100 dark:text-blue-200 text-sm">+23 this week</p>
+                      </div>
+                      <div className="text-4xl opacity-80">👥</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-xl p-6 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-semibold mb-2">Server Load</h3>
+                        <div className="text-3xl font-bold">34%</div>
+                        <p className="text-purple-100 dark:text-purple-200 text-sm">Optimal performance</p>
+                      </div>
+                      <div className="text-4xl opacity-80">⚡</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  {/* User Management */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white">User Management</h2>
+                      <div className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 rounded-full text-sm">
+                        Active Session
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-gray-800 dark:text-white">Current User</span>
+                          <span className="text-sm text-blue-600 dark:text-blue-400">{userTier} Tier</span>
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                          <p><strong>Email:</strong> {user?.email}</p>
+                          <p><strong>Name:</strong> {user?.name}</p>
+                          <p><strong>ID:</strong> {user?.id?.substring(0, 12)}...</p>
+                          <p><strong>Joined:</strong> {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <button className="p-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm font-medium">
+                          📊 View Analytics
+                        </button>
+                        <button className="p-3 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors text-sm font-medium">
+                          💼 Manage Tiers
+                        </button>
+                        <button className="p-3 bg-orange-600 dark:bg-orange-700 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors text-sm font-medium">
+                          🔄 Reset Data
+                        </button>
+                        <button className="p-3 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors text-sm font-medium">
+                          📋 Export Data
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* System Debug Info */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">System Debug Information</h2>
-                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-                      <div className="text-sm text-blue-700 dark:text-blue-400 space-y-2">
-                        <p><strong>Environment:</strong> {process.env.NODE_ENV || 'development'}</p>
-                        <p><strong>Firebase Project:</strong> {process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'Not configured'}</p>
-                        <p><strong>Current Theme:</strong> {document.documentElement.classList.contains('dark') ? 'Dark' : 'Light'}</p>
-                        <p><strong>User Agent:</strong> {typeof window !== 'undefined' ? window.navigator.userAgent.substring(0, 50) + '...' : 'N/A'}</p>
-                        <p><strong>Screen Resolution:</strong> {typeof window !== 'undefined' ? `${window.screen.width}x${window.screen.height}` : 'N/A'}</p>
-                        <p><strong>Current Time:</strong> {new Date().toLocaleString()}</p>
+                  {/* System Configuration */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">System Configuration</h2>
+                    
+                    <div className="space-y-4">
+                      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                        <h3 className="font-medium text-yellow-800 dark:text-yellow-400 mb-2">Feature Limits</h3>
+                        <div className="text-sm text-yellow-700 dark:text-yellow-400 space-y-1">
+                          <div className="flex justify-between">
+                            <span>Max Goals:</span>
+                            <span>{getFeatureLimit('maxGoals') === -1 ? 'Unlimited' : getFeatureLimit('maxGoals')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Daily Check-ins:</span>
+                            <span>{getFeatureLimit('maxCheckInsPerDay') === -1 ? 'Unlimited' : getFeatureLimit('maxCheckInsPerDay')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Advanced Analytics:</span>
+                            <span>{canAccessFeature('canUseAdvancedAnalytics') ? 'Enabled' : 'Disabled'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Data Export:</span>
+                            <span>{canAccessFeature('canExportData') ? 'Enabled' : 'Disabled'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                        <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-2">Environment Info</h3>
+                        <div className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
+                          <div className="flex justify-between">
+                            <span>Environment:</span>
+                            <span className="font-mono">{process.env.NODE_ENV || 'development'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Firebase Project:</span>
+                            <span className="font-mono text-xs">{process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.substring(0, 20) || 'Not configured'}...</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Theme:</span>
+                            <span>{typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'Dark' : 'Light'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Last Updated:</span>
+                            <span>{new Date().toLocaleTimeString()}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Quick Actions */}
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Quick Actions</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <button className="p-4 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors">
-                        Clear Cache
-                      </button>
-                      <button className="p-4 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors">
-                        Export User Data
-                      </button>
-                      <button className="p-4 bg-orange-600 dark:bg-orange-700 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors">
-                        Reset User Preferences
-                      </button>
-                      <button className="p-4 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors">
-                        View System Logs
-                      </button>
+                  {/* System Tools */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 xl:col-span-2">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">Administrative Tools</h2>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🔧</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">System Maintenance</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Clear cache, optimize database</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📊</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Usage Analytics</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">View detailed usage metrics</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🛡️</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Security Center</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Manage access & permissions</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📝</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">System Logs</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">View application logs</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">⚙️</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">App Settings</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Configure app behavior</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📦</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Backup Manager</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Create & restore backups</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🔄</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Data Migration</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Import & export user data</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
+                        <div className="text-center">
+                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📧</div>
+                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Notifications</h3>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Manage system notifications</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>
