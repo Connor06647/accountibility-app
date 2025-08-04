@@ -4,66 +4,861 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context-real';
 import { UpgradePrompt, TierBadge, FeatureLimit } from '@/components/ui/upgrade-prompt-no-styles';
 import { ThemeDialog } from '@/components/ui/theme-dialog';
+import { LoadingSpinner, LoadingButton } from '@/components/ui/loading';
+import { useToaster } from '@/components/ui/toaster';
+import OnboardingFlow from '@/components/OnboardingFlow';
+import SEO from '@/components/SEO';
+import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, updateDoc, deleteDoc, addDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const AccountabilityApp: React.FC = () => {
   const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signOut, clearError } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState<'welcome' | 'login' | 'signup' | 'dashboard'>('welcome');
+  const { addToast } = useToaster();
+  const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('onboarding');
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    // Check if user has seen onboarding before
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hasSeenOnboarding') !== 'true';
+    }
+    return true;
+  });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [signupForm, setSignupForm] = useState({ name: '', email: '', password: '' });
+  const [signupForm, setSignupForm] = useState({ name: '', username: '', email: '', password: '' });
   const [submitLoading, setSubmitLoading] = useState(false);
   const [themeDialogOpen, setThemeDialogOpen] = useState(false);
 
-  // Goals functionality state
-  const [goals, setGoals] = useState([
-    { id: 1, title: 'Exercise Daily', description: 'Work out for 30 minutes', status: 'active', progress: 65, completed: false }
-  ]);
+  // Admin-only testing features: Toast notifications and error boundary testing
+  // Regular users see clean interface without development/testing UI elements
+
+  // Goals functionality state - starts empty, loads from user's data
+  const [goals, setGoals] = useState<any[]>([]);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [newGoal, setNewGoal] = useState({ title: '', description: '' });
 
-  // Check-ins functionality state
-  const [checkIns, setCheckIns] = useState([
-    { id: 1, date: new Date().toISOString().split('T')[0], rating: 8, reflection: 'Made good progress on my goals today. Feeling motivated!', completed: true },
-    { id: 2, date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0], rating: 7, reflection: 'Good day overall, stayed consistent.', completed: true },
-    { id: 3, date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], rating: 6, reflection: 'Had some challenges but pushed through.', completed: true }
-  ]);
+  // Check-ins functionality state - starts empty, loads from user's data  
+  const [checkIns, setCheckIns] = useState<any[]>([]);
   const [todayCheckIn, setTodayCheckIn] = useState({ rating: 5, reflection: '' });
   const [hasCheckedInToday, setHasCheckedInToday] = useState(false);
+
+  // Admin panel state
+  const [adminData, setAdminData] = useState<{
+    totalUsers: number;
+    activeUsers: number;
+    totalGoals: number;
+    totalCheckIns: number;
+    systemStatus: string;
+    serverLoad: string;
+    recentUsers: any[];
+    systemLogs: any[];
+    usersByTier: { free: number; standard: number; premium: number };
+    lastUpdated: Date;
+  }>({
+    totalUsers: 0,
+    activeUsers: 0,
+    totalGoals: 0,
+    totalCheckIns: 0,
+    systemStatus: 'online',
+    serverLoad: '0%',
+    recentUsers: [],
+    systemLogs: [],
+    usersByTier: { free: 0, standard: 0, premium: 0 },
+    lastUpdated: new Date()
+  });
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+
+  // Clear user data when logging out - defined early to avoid hoisting issues
+  const clearUserData = () => {
+    console.log('Clearing user data...');
+    setGoals([]);
+    setCheckIns([]);
+    setTodayCheckIn({ rating: 5, reflection: '' });
+    setHasCheckedInToday(false);
+    setShowAddGoal(false);
+    setNewGoal({ title: '', description: '' });
+    // Clear login forms for security
+    setLoginForm({ email: '', password: '' });
+    setSignupForm({ name: '', username: '', email: '', password: '' });
+    console.log('User data cleared');
+  };
 
   useEffect(() => {
     if (user) {
       setCurrentScreen('dashboard');
+    } else if (!showOnboarding) {
+      setCurrentScreen('welcome');
+    } else {
+      setCurrentScreen('onboarding');
+    }
+  }, [user, showOnboarding]);
+
+  // Onboarding handlers
+  const handleOnboardingComplete = () => {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
+    if (user) {
+      setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
+    } else {
+      setCurrentScreen('signup'); // Go directly to signup after onboarding
+    }
+  };
+
+  const handleOnboardingSkip = () => {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
+    if (user) {
+      setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
     } else {
       setCurrentScreen('welcome');
     }
+  };
+
+  // Real-time admin data fetching
+  useEffect(() => {
+    if (isAdmin && currentPage === 'admin') {
+      // Add some initial system logs
+      addSystemLog('Admin panel accessed', 'admin');
+      addSystemLog('System monitoring started', 'info');
+      
+      // Update current user's activity timestamp
+      if (user?.id) {
+        updateDoc(doc(db, 'users', user.id), {
+          lastSeen: new Date(),
+          lastActive: new Date()
+        }).catch(error => {
+          console.error('Error updating user activity:', error);
+        });
+      }
+      
+      fetchAdminData();
+      
+      // Set up real-time listeners for admin data
+      const unsubscribers: (() => void)[] = [];
+
+      // Listen to users collection
+      const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(50));
+      const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+        const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Only count users who have actually engaged with the app
+        const engagedUsers = users.filter((user: any) => user.hasEngaged === true);
+        
+        const activeToday = engagedUsers.filter((user: any) => {
+          const lastSeen = user.lastSeen?.toDate?.() || user.lastActive?.toDate?.();
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          return lastSeen && lastSeen >= todayStart;
+        }).length;
+        
+        updateAdminData({ 
+          totalUsers: engagedUsers.length, // Only count engaged users
+          recentUsers: users.slice(0, 10), // Still show all recent users for admin visibility
+          usersByTier: countUsersByTier(engagedUsers), // Only count engaged users by tier
+          activeUsers: activeToday,
+          lastUpdated: new Date()
+        });
+        addSystemLog(`Users data updated: ${engagedUsers.length} engaged users, ${activeToday} active today`, 'info');
+      }, (error) => {
+        console.error('Error listening to users:', error);
+        addSystemLog(`Error fetching users: ${error.message}`, 'error');
+      });
+      unsubscribers.push(unsubscribeUsers);
+
+      // Listen to goals collection for total count
+      const goalsQuery = collection(db, 'goals');
+      const unsubscribeGoals = onSnapshot(goalsQuery, (snapshot) => {
+        updateAdminData({ 
+          totalGoals: snapshot.size,
+          lastUpdated: new Date()
+        });
+        addSystemLog(`Goals data updated: ${snapshot.size} total goals`, 'info');
+      }, (error) => {
+        console.error('Error listening to goals:', error);
+        addSystemLog(`Error fetching goals: ${error.message}`, 'error');
+      });
+      unsubscribers.push(unsubscribeGoals);
+
+      // Listen to check-ins collection for total count
+      const checkInsQuery = collection(db, 'checkIns');
+      const unsubscribeCheckIns = onSnapshot(checkInsQuery, (snapshot) => {
+        updateAdminData({ 
+          totalCheckIns: snapshot.size,
+          lastUpdated: new Date()
+        });
+        addSystemLog(`Check-ins data updated: ${snapshot.size} total check-ins`, 'info');
+      }, (error) => {
+        console.error('Error listening to check-ins:', error);
+        addSystemLog(`Error fetching check-ins: ${error.message}`, 'error');
+      });
+      unsubscribers.push(unsubscribeCheckIns);
+
+      // Update system metrics every 30 seconds
+      const systemMetricsInterval = setInterval(() => {
+        updateSystemMetrics();
+      }, 30000);
+
+      return () => {
+        unsubscribers.forEach(unsubscribe => unsubscribe());
+        clearInterval(systemMetricsInterval);
+      };
+    }
+  }, [isAdmin, currentPage]);
+
+  // Load user-specific data when user logs in
+  useEffect(() => {
+    console.log('User effect triggered:', user ? `${user.email} (${user.id})` : 'null');
+    console.log('Current state - Goals:', goals.length, 'Check-ins:', checkIns.length);
+    
+    if (user) {
+      console.log('User logged in, loading data...');
+      loadUserData();
+    } else {
+      console.log('No user, clearing data...');
+      clearUserData();
+    }
   }, [user]);
+
+  // Clear data when user logs out
+  useEffect(() => {
+    if (!user) {
+      console.log('User logged out, clearing data...');
+      clearUserData();
+    }
+  }, [user]);
+
+  // Helper functions for admin data
+  const fetchAdminData = async () => {
+    setAdminLoading(true);
+    try {
+      await Promise.all([
+        fetchTotalUsers(),
+        fetchTotalGoals(),
+        fetchTotalCheckIns(),
+        updateSystemMetrics()
+      ]);
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const fetchTotalUsers = async () => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      updateAdminData({
+        totalUsers: usersSnapshot.size,
+        recentUsers: users.slice(0, 10),
+        usersByTier: countUsersByTier(users),
+        activeUsers: users.filter((user: any) => {
+          const lastSeen = user.lastSeen?.toDate?.() || user.lastActive?.toDate?.();
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          return lastSeen && lastSeen >= todayStart;
+        }).length
+      });
+      
+      if (usersSnapshot.size === 0) {
+        // Add some mock data for demonstration when no real users exist
+        const now = new Date();
+        const mockUsers = [
+          { 
+            id: 'demo1', 
+            name: 'Current User (You)', 
+            email: user?.email || 'current@example.com', 
+            tier: userTier,
+            createdAt: { toDate: () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+            lastSeen: { toDate: () => now },
+            lastActive: { toDate: () => now }
+          },
+          { 
+            id: 'demo2', 
+            name: 'Demo User 2', 
+            email: 'demo2@example.com', 
+            tier: 'standard',
+            createdAt: { toDate: () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+            lastSeen: { toDate: () => new Date(Date.now() - 2 * 60 * 60 * 1000) }
+          }
+        ];
+        
+        // Count active users for today (only current user should be active)
+        const activeToday = mockUsers.filter((mockUser: any) => {
+          const lastSeen = mockUser.lastSeen?.toDate?.() || mockUser.lastActive?.toDate?.();
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          return lastSeen && lastSeen >= todayStart;
+        }).length;
+        
+        updateAdminData({
+          totalUsers: mockUsers.length,
+          recentUsers: mockUsers,
+          usersByTier: countUsersByTier(mockUsers),
+          activeUsers: activeToday // This should be 1 (just the current user)
+        });
+        
+        addSystemLog(`No real users found - showing demo data (${activeToday} active today)`, 'info');
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      addSystemLog(`Error fetching users: ${error}`, 'error');
+    }
+  };
+
+  const fetchTotalGoals = async () => {
+    try {
+      const goalsSnapshot = await getDocs(collection(db, 'goals'));
+      updateAdminData({ totalGoals: goalsSnapshot.size });
+      
+      if (goalsSnapshot.size === 0) {
+        // Show mock data for demonstration
+        updateAdminData({ totalGoals: 15 });
+        addSystemLog('No real goals found - showing demo count', 'info');
+      }
+    } catch (error) {
+      console.error('Error fetching goals:', error);
+      addSystemLog(`Error fetching goals: ${error}`, 'error');
+    }
+  };
+
+  const fetchTotalCheckIns = async () => {
+    try {
+      const checkInsSnapshot = await getDocs(collection(db, 'checkIns'));
+      updateAdminData({ totalCheckIns: checkInsSnapshot.size });
+      
+      if (checkInsSnapshot.size === 0) {
+        // Show mock data for demonstration
+        updateAdminData({ totalCheckIns: 42 });
+        addSystemLog('No real check-ins found - showing demo count', 'info');
+      }
+    } catch (error) {
+      console.error('Error fetching check-ins:', error);
+      addSystemLog(`Error fetching check-ins: ${error}`, 'error');
+    }
+  };
+
+  const updateSystemMetrics = () => {
+    // Simulate server metrics (in a real app, these would come from your backend)
+    const cpuUsage = Math.floor(Math.random() * 40) + 20; // 20-60%
+    const memoryUsage = Math.floor(Math.random() * 30) + 40; // 40-70%
+    const serverLoad = Math.max(cpuUsage, memoryUsage);
+    
+    updateAdminData({
+      serverLoad: `${serverLoad}%`,
+      systemStatus: serverLoad > 80 ? 'warning' : 'online',
+      lastUpdated: new Date()
+    });
+  };
+
+  const countUsersByTier = (users: any[]) => {
+    return users.reduce((counts: any, user: any) => {
+      const tier = user.tier || 'free';
+      counts[tier] = (counts[tier] || 0) + 1;
+      return counts;
+    }, { free: 0, standard: 0, premium: 0 });
+  };
+
+  const updateAdminData = (newData: any) => {
+    setAdminData(prev => ({ ...prev, ...newData }));
+  };
+
+  // Admin actions
+  const handleUserTierChange = async (userId: string, newTier: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { tier: newTier });
+      // Update local state
+      setAdminData(prev => ({
+        ...prev,
+        recentUsers: prev.recentUsers.map((user: any) => 
+          user.id === userId ? { ...user, tier: newTier } : user
+        )
+      }));
+      addSystemLog(`Updated user ${userId} tier to ${newTier}`, 'admin');
+    } catch (error) {
+      console.error('Error updating user tier:', error);
+      addSystemLog(`Failed to update user ${userId} tier: ${error}`, 'error');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (window.confirm('Are you sure you want to delete this user? This action cannot be undone and will permanently remove their Firebase Authentication account and all associated data.')) {
+      try {
+        // Use the complete API endpoint with Firebase Admin SDK
+        const response = await fetch('/api/admin/delete-user', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId,
+            adminUserId: user?.id
+          }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          // Update local state
+          setAdminData(prev => ({
+            ...prev,
+            recentUsers: prev.recentUsers.filter((user: any) => user.id !== userId),
+            totalUsers: prev.totalUsers - 1
+          }));
+          
+          addToast({
+            type: 'success',
+            title: 'User completely deleted',
+            description: 'User and all associated data have been permanently removed from both Firebase Auth and database.'
+          });
+          
+          addSystemLog(`Deleted user ${userId} data from Firestore`, 'admin');
+        } else {
+          throw new Error(result.error || 'Failed to delete user');
+        }
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        addSystemLog(`Failed to delete user ${userId}: ${error}`, 'error');
+        addToast({
+          type: 'error',
+          title: 'Failed to delete user',
+          description: `Unable to delete the user. ${error instanceof Error ? error.message : 'Please try again.'}`
+        });
+      }
+    }
+  };
+
+  const addSystemLog = (message: string, type = 'info') => {
+    const log = {
+      id: Date.now(),
+      message,
+      type,
+      timestamp: new Date(),
+      user: user?.email || 'System'
+    };
+    
+    setAdminData(prev => ({
+      ...prev,
+      systemLogs: [log, ...prev.systemLogs.slice(0, 49)] // Keep last 50 logs
+    }));
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitLoading(true);
-    const result = await signIn(loginForm.email, loginForm.password);
-    setSubmitLoading(false);
-    if (result.success) {
-      setCurrentScreen('dashboard');
+    
+    // Validate form data before making Firebase call
+    if (!loginForm.email || !loginForm.password) {
+      addToast({
+        type: 'error',
+        title: 'Missing information',
+        description: 'Please enter both email and password to sign in.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(loginForm.email)) {
+      addToast({
+        type: 'error',
+        title: 'Invalid email',
+        description: 'Please enter a valid email address.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    try {
+      const result = await signIn(loginForm.email, loginForm.password);
+      
+      if (result.success) {
+        // Success - the useEffect will handle navigation when user state updates
+        addToast({
+          type: 'success',
+          title: 'Welcome back!',
+          description: 'You have successfully signed in to your account.'
+        });
+        // Clear the login form for security
+        setLoginForm({ email: '', password: '' });
+      } else {
+        // Handle specific error cases
+        const errorMessage = result.error || 'Sign in failed';
+        let title = 'Sign in failed';
+        let description = 'Please check your credentials and try again.';
+        
+        if (errorMessage.includes('user-not-found') || errorMessage.includes('invalid-credential')) {
+          title = 'Account not found';
+          description = 'No account exists with this email. Would you like to create an account instead?';
+        } else if (errorMessage.includes('wrong-password')) {
+          title = 'Incorrect password';
+          description = 'The password you entered is incorrect. Please try again.';
+        } else if (errorMessage.includes('too-many-requests')) {
+          title = 'Too many attempts';
+          description = 'Please wait a few minutes before trying again.';
+        } else if (errorMessage.includes('user-disabled')) {
+          title = 'Account disabled';
+          description = 'This account has been disabled. Please contact support.';
+        }
+        
+        addToast({
+          type: 'error',
+          title,
+          description
+        });
+      }
+    } catch (error: any) {
+      // Fallback error handling
+      let title = 'Sign in failed';
+      let description = 'Please check your credentials and try again.';
+      
+      if (error.message?.includes('user-not-found') || error.message?.includes('invalid-credential')) {
+        title = 'Account not found';
+        description = 'No account exists with this email. Would you like to create an account instead?';
+      }
+      
+      addToast({
+        type: 'error',
+        title,
+        description
+      });
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitLoading(true);
-    const result = await signUp(signupForm.email, signupForm.password, signupForm.name);
-    setSubmitLoading(false);
-    if (result.success) {
-      setCurrentScreen('dashboard');
+    
+    // Validate form data before making Firebase call
+    if (!signupForm.name || !signupForm.username || !signupForm.email || !signupForm.password) {
+      addToast({
+        type: 'error',
+        title: 'Missing information',
+        description: 'Please fill in all required fields to create your account.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(signupForm.email)) {
+      addToast({
+        type: 'error',
+        title: 'Invalid email',
+        description: 'Please enter a valid email address.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    // Password strength validation
+    if (signupForm.password.length < 6) {
+      addToast({
+        type: 'error',
+        title: 'Password too short',
+        description: 'Password must be at least 6 characters long.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    // Username validation
+    if (signupForm.username.length < 3) {
+      addToast({
+        type: 'error',
+        title: 'Username too short',
+        description: 'Username must be at least 3 characters long.'
+      });
+      setSubmitLoading(false);
+      return;
+    }
+    
+    try {
+      // Check if username is already taken
+      const usernameQuery = query(collection(db, 'users'), where('username', '==', signupForm.username.toLowerCase()));
+      const usernameSnapshot = await getDocs(usernameQuery);
+      
+      if (!usernameSnapshot.empty) {
+        addToast({
+          type: 'error',
+          title: 'Username already taken',
+          description: 'Please choose a different username.'
+        });
+        setSubmitLoading(false);
+        return;
+      }
+      
+      await signUp(signupForm.email, signupForm.password, signupForm.name, signupForm.username);
+      // Success - the useEffect will handle navigation when user state updates
+      addToast({
+        type: 'success',
+        title: 'Account created!',
+        description: 'Welcome to Accountability On Autopilot! Your journey starts now.'
+      });
+      // Clear the signup form for security
+      setSignupForm({ name: '', username: '', email: '', password: '' });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Account creation failed',
+        description: error.message || 'Please try again or use a different email address.'
+      });
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
     setSubmitLoading(true);
-    const result = await signInWithGoogle();
-    setSubmitLoading(false);
-    if (result.success) {
-      setCurrentScreen('dashboard');
+    
+    try {
+      await signInWithGoogle();
+      // Success - the useEffect will handle navigation when user state updates
+      addToast({
+        type: 'success',
+        title: 'Welcome!',
+        description: 'Successfully signed in with Google.'
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Google sign-in failed',
+        description: error.message || 'Please try again or use email/password sign-in.'
+      });
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  // Subscription management functions
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+
+  const handleSubscriptionChange = async (newTier: 'free' | 'standard' | 'premium') => {
+    if (subscriptionLoading || newTier === userTier) return;
+    
+    setSubscriptionLoading(true);
+    
+    try {
+      if (newTier === 'free') {
+        // Handle downgrade/cancellation
+        await handleCancelSubscription();
+        return;
+      }
+
+      // For upgrades to paid plans, redirect to Stripe Checkout
+      const priceId = newTier === 'standard' 
+        ? process.env.NEXT_PUBLIC_STRIPE_STANDARD_PRICE_ID 
+        : process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PRICE_ID;
+
+      if (!priceId) {
+        addToast({
+          type: 'error',
+          title: 'Payment system unavailable',
+          description: 'Payment system is not configured. Please contact support.'
+        });
+        return;
+      }
+
+      addToast({
+        type: 'info',
+        title: 'Redirecting to payment...',
+        description: 'You will be redirected to complete your subscription upgrade.'
+      });
+
+      // Import Stripe dynamically to avoid SSR issues
+      const { createCheckoutSession } = await import('@/lib/stripe');
+      
+      await createCheckoutSession(priceId, user?.id || '', user?.email || '');
+      
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      addToast({
+        type: 'error',
+        title: 'Subscription update failed',
+        description: 'Failed to process payment. Please try again.'
+      });
+      addSystemLog(`Failed to update subscription: ${error}`, 'error');
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (userTier === 'free') return;
+    
+    const confirmed = window.confirm(
+      `Cancel your ${userTier} subscription?\n\nYou'll retain access until the end of your billing period.\n\nYou can manage your subscription and billing in the customer portal.`
+    );
+    
+    if (!confirmed) return;
+    
+    setSubscriptionLoading(true);
+    
+    try {
+      // Redirect to Stripe Customer Portal for subscription management
+      if (user?.stripeCustomerId) {
+        const { createCustomerPortalSession } = await import('@/lib/stripe');
+        await createCustomerPortalSession(user.stripeCustomerId);
+        addToast({
+          type: 'info',
+          title: 'Redirecting to subscription portal',
+          description: 'You will be redirected to manage your subscription and billing.'
+        });
+      } else {
+        addToast({
+          type: 'error',
+          title: 'No active subscription found',
+          description: 'Please contact support if you believe this is an error.'
+        });
+      }
+    } catch (error) {
+      console.error('Error accessing customer portal:', error);
+      addToast({
+        type: 'error',
+        title: 'Unable to access subscription portal',
+        description: 'Please contact support for assistance with your subscription.'
+      });
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const handleSaveSettings = async (name: string) => {
+    if (!user || !name.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Invalid input',
+        description: 'Please enter a valid name.'
+      });
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'users', user.id), {
+        name: name.trim(),
+        updatedAt: new Date()
+      });
+      
+      addToast({
+        type: 'success',
+        title: 'Settings saved',
+        description: 'Your profile has been updated successfully.'
+      });
+      addSystemLog(`User ${user.email} updated their profile name`, 'info');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to save settings',
+        description: 'Unable to update your profile. Please try again.'
+      });
+      addSystemLog(`Failed to save settings: ${error}`, 'error');
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      clearUserData(); // Clear user data before signing out
+      await signOut();
+      setCurrentScreen('welcome');
+      addToast({
+        type: 'success',
+        title: 'Signed out successfully',
+        description: 'You have been signed out of your account.'
+      });
+    } catch (error) {
+      console.error('Error signing out:', error);
+      addToast({
+        type: 'error',
+        title: 'Sign out failed',
+        description: 'There was an error signing you out. Please try again.'
+      });
+    }
+  };
+
+  const handlePaymentMethodUpdate = async () => {
+    try {
+      if (user?.stripeCustomerId) {
+        const { createCustomerPortalSession } = await import('@/lib/stripe');
+        await createCustomerPortalSession(user.stripeCustomerId);
+        addToast({
+          type: 'info',
+          title: 'Redirecting to payment portal',
+          description: 'You will be redirected to update your payment method.'
+        });
+      } else {
+        addToast({
+          type: 'warning',
+          title: 'No payment method found',
+          description: 'Please subscribe to a plan first to manage payment methods.'
+        });
+      }
+    } catch (error) {
+      console.error('Error accessing payment management:', error);
+      addToast({
+        type: 'error',
+        title: 'Unable to access payment portal',
+        description: 'Please contact support for assistance with payment management.'
+      });
+    }
+  };
+
+  const handleDownloadInvoices = async () => {
+    try {
+      if (user?.stripeCustomerId) {
+        const { createCustomerPortalSession } = await import('@/lib/stripe');
+        await createCustomerPortalSession(user.stripeCustomerId);
+        addToast({
+          type: 'info',
+          title: 'Redirecting to billing portal',
+          description: 'You will be redirected to view and download your invoices.'
+        });
+      } else {
+        addToast({
+          type: 'warning',
+          title: 'No billing history found',
+          description: 'Please subscribe to a plan first to access billing history.'
+        });
+      }
+    } catch (error) {
+      console.error('Error accessing billing history:', error);
+      addToast({
+        type: 'error',
+        title: 'Unable to access billing portal',
+        description: 'Please contact support for assistance with billing history.'
+      });
+    }
+  };
+
+  const handlePauseSubscription = async () => {
+    try {
+      if (user?.stripeCustomerId) {
+        const { createCustomerPortalSession } = await import('@/lib/stripe');
+        await createCustomerPortalSession(user.stripeCustomerId);
+        addToast({
+          type: 'info',
+          title: 'Redirecting to subscription portal',
+          description: 'You will be redirected to pause or manage your subscription.'
+        });
+      } else {
+        addToast({
+          type: 'warning',
+          title: 'No active subscription found',
+          description: 'Please subscribe to a plan first to manage your subscription.'
+        });
+      }
+    } catch (error) {
+      console.error('Error accessing subscription management:', error);
+      addToast({
+        type: 'error',
+        title: 'Unable to access subscription portal',
+        description: 'Please contact support for assistance with subscription management.'
+      });
     }
   };
 
@@ -145,8 +940,9 @@ const AccountabilityApp: React.FC = () => {
             <button
               type="submit"
               disabled={submitLoading}
-              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none"
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none flex items-center justify-center gap-2"
             >
+              {submitLoading && <LoadingSpinner size="sm" color="white" />}
               {submitLoading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
@@ -160,13 +956,22 @@ const AccountabilityApp: React.FC = () => {
                 <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
               </div>
             </div>
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={submitLoading}
-              className="mt-3 w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
-            >
-              🔍 Sign in with Google
-            </button>
+            <div className="mt-3 space-y-2">
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={submitLoading}
+                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+              >
+                🔍 Sign in with Google
+              </button>
+              <button
+                disabled={true}
+                className="w-full px-6 py-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                title="Apple Sign-in coming soon"
+              >
+                🍎 Sign in with Apple (Coming Soon)
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 text-center">
@@ -209,6 +1014,21 @@ const AccountabilityApp: React.FC = () => {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+              <input
+                type="text"
+                value={signupForm.username}
+                onChange={(e) => setSignupForm({ ...signupForm, username: e.target.value })}
+                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
+                placeholder="Choose a unique username"
+                required
+                minLength={3}
+                maxLength={20}
+                pattern="[a-zA-Z0-9_]+"
+                title="Username can only contain letters, numbers, and underscores"
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
               <input
                 type="email"
@@ -246,13 +1066,22 @@ const AccountabilityApp: React.FC = () => {
                 <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
               </div>
             </div>
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={submitLoading}
-              className="mt-3 w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
-            >
-              🔍 Sign up with Google
-            </button>
+            <div className="mt-3 space-y-2">
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={submitLoading}
+                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+              >
+                🔍 Sign up with Google
+              </button>
+              <button
+                disabled={true}
+                className="w-full px-6 py-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                title="Apple Sign-in coming soon"
+              >
+                🍎 Sign up with Apple (Coming Soon)
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 text-center">
@@ -270,46 +1099,350 @@ const AccountabilityApp: React.FC = () => {
   );
 
   // Functionality handlers
-  const handleAddGoal = () => {
-    if (newGoal.title.trim() && newGoal.description.trim()) {
-      const goal = {
-        id: Date.now(),
-        title: newGoal.title.trim(),
-        description: newGoal.description.trim(),
-        status: 'active' as const,
-        progress: 0,
-        completed: false
-      };
-      setGoals([...goals, goal]);
-      setNewGoal({ title: '', description: '' });
-      setShowAddGoal(false);
+  // Helper function to mark user as engaged
+  const markUserAsEngaged = async () => {
+    if (user && !user.hasEngaged) {
+      try {
+        await updateDoc(doc(db, 'users', user.id), {
+          hasEngaged: true,
+          lastActive: new Date()
+        });
+        addSystemLog(`User ${user.email} marked as engaged`, 'info');
+      } catch (error) {
+        console.error('Error marking user as engaged:', error);
+      }
     }
   };
 
-  const handleDeleteGoal = (goalId: number) => {
-    setGoals(goals.filter(goal => goal.id !== goalId));
+  // Load user-specific data from Firestore
+  const loadUserData = async () => {
+    if (!user?.id) {
+      console.log('No user ID available for loading data');
+      return;
+    }
+    
+    console.log(`Loading data for user: ${user.email} (${user.id})`);
+    
+    try {
+      // Load user's goals with simplified query first
+      let userGoals: any[] = [];
+      try {
+        const goalsQuery = query(
+          collection(db, 'goals'), 
+          where('userId', '==', user.id)
+        );
+        const goalsSnapshot = await getDocs(goalsQuery);
+        userGoals = goalsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as any[];
+        // Sort manually after fetching to avoid index requirements
+        userGoals.sort((a, b) => {
+          const aDate = a.createdAt?.toDate?.() || new Date(0);
+          const bDate = b.createdAt?.toDate?.() || new Date(0);
+          return bDate.getTime() - aDate.getTime();
+        });
+      } catch (goalError) {
+        console.warn('Failed to load goals with compound query, trying simple query:', goalError);
+        // Fallback: load all user goals without ordering
+        const simpleGoalsQuery = query(collection(db, 'goals'), where('userId', '==', user.id));
+        const goalsSnapshot = await getDocs(simpleGoalsQuery);
+        userGoals = goalsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as any[];
+      }
+      
+      setGoals(userGoals);
+      console.log(`Loaded ${userGoals.length} goals for user ${user.email}`);
+
+      // Load user's check-ins with simplified query
+      let userCheckIns: any[] = [];
+      try {
+        const checkInsQuery = query(
+          collection(db, 'checkIns'),
+          where('userId', '==', user.id),
+          limit(30)
+        );
+        const checkInsSnapshot = await getDocs(checkInsQuery);
+        userCheckIns = checkInsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as any[];
+        // Sort manually by date
+        userCheckIns.sort((a, b) => {
+          const aDate = a.date || '';
+          const bDate = b.date || '';
+          return bDate.localeCompare(aDate);
+        });
+      } catch (checkInError) {
+        console.warn('Failed to load check-ins with compound query, trying simple query:', checkInError);
+        // Fallback: load all user check-ins without ordering
+        const simpleCheckInsQuery = query(collection(db, 'checkIns'), where('userId', '==', user.id));
+        const checkInsSnapshot = await getDocs(simpleCheckInsQuery);
+        userCheckIns = checkInsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as any[];
+        // Take only the last 30 manually
+        userCheckIns = userCheckIns.slice(0, 30);
+      }
+      
+      setCheckIns(userCheckIns);
+      console.log(`Loaded ${userCheckIns.length} check-ins for user ${user.email}`);
+
+      // Check if user has checked in today
+      const today = new Date().toISOString().split('T')[0];
+      const todayCheckIn = userCheckIns.find((checkIn: any) => checkIn.date === today);
+      setHasCheckedInToday(!!todayCheckIn);
+      console.log(`Today's check-in status: ${!!todayCheckIn ? 'completed' : 'pending'}`);
+
+      addSystemLog(`Loaded data for user ${user.email}: ${userGoals.length} goals, ${userCheckIns.length} check-ins`, 'info');
+      
+      // Show success toast if we loaded data successfully
+      if (userGoals.length > 0 || userCheckIns.length > 0) {
+        addToast({
+          type: 'success',
+          title: 'Data loaded successfully',
+          description: `Found ${userGoals.length} goals and ${userCheckIns.length} check-ins.`
+        });
+      } else {
+        // Welcome message for new users
+        addToast({
+          type: 'info',
+          title: 'Welcome to Accountability On Autopilot!',
+          description: 'Start by adding your first goal or submitting a check-in.'
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to load your data',
+        description: 'There was an issue loading your goals and check-ins. Please refresh the page.'
+      });
+      addSystemLog(`Failed to load user data: ${error}`, 'error');
+    }
   };
 
-  const handleToggleGoal = (goalId: number) => {
-    setGoals(goals.map(goal => 
-      goal.id === goalId 
-        ? { ...goal, completed: !goal.completed, progress: !goal.completed ? 100 : 0 }
-        : goal
-    ));
+  const handleAddGoal = async () => {
+    if (!user?.id) {
+      addToast({
+        type: 'error',
+        title: 'Authentication required',
+        description: 'Please log in to add goals.'
+      });
+      return;
+    }
+
+    if (newGoal.title.trim() && newGoal.description.trim()) {
+      try {
+        const goalData = {
+          userId: user.id,
+          title: newGoal.title.trim(),
+          description: newGoal.description.trim(),
+          status: 'active' as const,
+          progress: 0,
+          completed: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        // Save to Firestore
+        const docRef = await addDoc(collection(db, 'goals'), goalData);
+        
+        // Update local state
+        const newGoalWithId = {
+          id: docRef.id,
+          ...goalData
+        };
+        setGoals([...goals, newGoalWithId]);
+        setNewGoal({ title: '', description: '' });
+        setShowAddGoal(false);
+        
+        // Mark user as engaged when they create their first goal
+        await markUserAsEngaged();
+        
+        addToast({
+          type: 'success',
+          title: 'Goal added!',
+          description: `"${goalData.title}" has been added to your goals.`
+        });
+        
+        addSystemLog(`User ${user.email} added goal: ${goalData.title}`, 'info');
+      } catch (error) {
+        console.error('Error adding goal:', error);
+        addToast({
+          type: 'error',
+          title: 'Failed to add goal',
+          description: 'Unable to save your goal. Please try again.'
+        });
+        addSystemLog(`Failed to add goal: ${error}`, 'error');
+      }
+    } else {
+      addToast({
+        type: 'warning',
+        title: 'Missing information',
+        description: 'Please fill in both the goal title and description.'
+      });
+    }
   };
 
-  const handleSubmitCheckIn = () => {
-    if (todayCheckIn.reflection.trim() && !hasCheckedInToday) {
-      const checkIn = {
-        id: Date.now(),
-        date: new Date().toISOString().split('T')[0],
-        rating: todayCheckIn.rating,
-        reflection: todayCheckIn.reflection.trim(),
-        completed: true
+  const handleDeleteGoal = async (goalId: string | number) => {
+    if (!user?.id) return;
+
+    try {
+      const goalToDelete = goals.find(goal => goal.id === goalId);
+      
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'goals', goalId.toString()));
+      
+      // Update local state
+      setGoals(goals.filter(goal => goal.id !== goalId));
+      
+      addToast({
+        type: 'info',
+        title: 'Goal deleted',
+        description: `"${goalToDelete?.title}" has been removed from your goals.`
+      });
+      
+      addSystemLog(`User ${user.email} deleted goal: ${goalToDelete?.title}`, 'info');
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to delete goal',
+        description: 'Unable to delete the goal. Please try again.'
+      });
+      addSystemLog(`Failed to delete goal: ${error}`, 'error');
+    }
+  };
+
+  const handleToggleGoal = async (goalId: string | number) => {
+    if (!user?.id) return;
+
+    try {
+      const goal = goals.find(g => g.id === goalId);
+      if (!goal) return;
+
+      const isBeingCompleted = !goal.completed;
+      const updatedGoal = {
+        ...goal,
+        completed: isBeingCompleted,
+        progress: isBeingCompleted ? 100 : 0,
+        updatedAt: new Date()
       };
-      setCheckIns([checkIn, ...checkIns]);
-      setTodayCheckIn({ rating: 5, reflection: '' });
-      setHasCheckedInToday(true);
+
+      // Update in Firestore
+      await updateDoc(doc(db, 'goals', goalId.toString()), {
+        completed: updatedGoal.completed,
+        progress: updatedGoal.progress,
+        updatedAt: updatedGoal.updatedAt
+      });
+
+      // Update local state
+      setGoals(goals.map(g => 
+        g.id === goalId ? updatedGoal : g
+      ));
+      
+      if (isBeingCompleted) {
+        addToast({
+          type: 'success',
+          title: '🎉 Goal completed!',
+          description: `Congratulations on completing "${goal.title}"!`
+        });
+        addSystemLog(`User ${user.email} completed goal: ${goal.title}`, 'info');
+      } else {
+        addToast({
+          type: 'info',
+          title: 'Goal reopened',
+          description: `"${goal.title}" has been marked as incomplete.`
+        });
+        addSystemLog(`User ${user.email} reopened goal: ${goal.title}`, 'info');
+      }
+      
+      // Optional: Add a small celebration effect for completing goals
+      if (isBeingCompleted) {
+        setTimeout(() => {
+          // Any additional completion effects can be added here
+        }, 1000); // Matches the animation duration
+      }
+    } catch (error) {
+      console.error('Error updating goal:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to update goal',
+        description: 'Unable to update the goal. Please try again.'
+      });
+      addSystemLog(`Failed to update goal: ${error}`, 'error');
+    }
+  };
+
+  const handleSubmitCheckIn = async () => {
+    if (!user?.id) {
+      addToast({
+        type: 'error',
+        title: 'Authentication required',
+        description: 'Please log in to submit check-ins.'
+      });
+      return;
+    }
+
+    if (todayCheckIn.reflection.trim() && !hasCheckedInToday) {
+      try {
+        const checkInData = {
+          userId: user.id,
+          date: new Date().toISOString().split('T')[0],
+          rating: todayCheckIn.rating,
+          reflection: todayCheckIn.reflection.trim(),
+          completed: true,
+          createdAt: new Date()
+        };
+
+        // Save to Firestore
+        const docRef = await addDoc(collection(db, 'checkIns'), checkInData);
+        
+        // Update local state
+        const newCheckIn = {
+          id: docRef.id,
+          ...checkInData
+        };
+        setCheckIns([newCheckIn, ...checkIns]);
+        setTodayCheckIn({ rating: 5, reflection: '' });
+        setHasCheckedInToday(true);
+        
+        // Mark user as engaged when they submit their first check-in
+        await markUserAsEngaged();
+        
+        addToast({
+          type: 'success',
+          title: 'Check-in completed!',
+          description: `Today's check-in saved with a ${todayCheckIn.rating}/10 rating.`
+        });
+        
+        addSystemLog(`User ${user.email} submitted check-in with rating ${todayCheckIn.rating}`, 'info');
+      } catch (error) {
+        console.error('Error submitting check-in:', error);
+        addToast({
+          type: 'error',
+          title: 'Failed to submit check-in',
+          description: 'Unable to save your check-in. Please try again.'
+        });
+        addSystemLog(`Failed to submit check-in: ${error}`, 'error');
+      }
+    } else if (!todayCheckIn.reflection.trim()) {
+      addToast({
+        type: 'warning',
+        title: 'Reflection required',
+        description: 'Please add a reflection about your day before submitting.'
+      });
+    } else if (hasCheckedInToday) {
+      addToast({
+        type: 'info',
+        title: 'Already checked in',
+        description: 'You have already completed your check-in for today!'
+      });
     }
   };
 
@@ -330,6 +1463,12 @@ const AccountabilityApp: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    
+    addToast({
+      type: 'success',
+      title: 'Data exported!',
+      description: 'Your accountability data has been downloaded successfully.'
+    });
   };
 
   // Dashboard with tiered features
@@ -340,13 +1479,17 @@ const AccountabilityApp: React.FC = () => {
     const canUseAdvancedAnalytics = canAccessFeature('canUseAdvancedAnalytics');
     const canExportData = canAccessFeature('canExportData');
 
-    // Handler to navigate to settings for upgrades
+    // Handler to navigate to subscription page for upgrades
     const handleUpgradeClick = () => {
-      setCurrentPage('settings');
+      setCurrentPage('subscription');
     };
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <SEO 
+          title="Dashboard"
+          description="Track your goals and progress with your personal accountability dashboard"
+        />
         <ThemeDialog open={themeDialogOpen} onClose={() => setThemeDialogOpen(false)} />
         <div className="flex">
           {/* Sidebar */}
@@ -354,7 +1497,9 @@ const AccountabilityApp: React.FC = () => {
             <div className="p-6 border-b border-blue-200 dark:border-blue-700">
               <div className="flex items-center justify-between">
                 <h1 className="text-xl font-bold text-gray-800 dark:text-white">Accountability</h1>
-                <TierBadge tier={userTier} />
+                <div className="flex items-center gap-2">
+                  <TierBadge tier={userTier} />
+                </div>
               </div>
             </div>
             
@@ -403,6 +1548,11 @@ const AccountabilityApp: React.FC = () => {
                     <div>
                       <div className="flex items-center gap-3 mb-2">
                         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Welcome back, {user?.name}!</h1>
+                        {isAdmin && (
+                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-medium animate-pulse">
+                            🔧 Admin
+                          </span>
+                        )}
                       </div>
                       <p className="text-gray-600 dark:text-gray-400">Ready to stay accountable today?</p>
                     </div>
@@ -416,6 +1566,28 @@ const AccountabilityApp: React.FC = () => {
                     >
                       Sign Out
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => addToast({ 
+                          type: 'success', 
+                          title: 'Admin Test Notification!', 
+                          description: 'Notification system is working correctly.' 
+                        })}
+                        className="px-3 py-1 bg-green-500 dark:bg-green-600 text-white rounded text-xs hover:bg-green-600 dark:hover:bg-green-500 transition-colors"
+                      >
+                        Test Toast
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          throw new Error('Test error boundary');
+                        }}
+                        className="px-3 py-1 bg-orange-500 dark:bg-orange-600 text-white rounded text-xs hover:bg-orange-600 dark:hover:bg-orange-500 transition-colors"
+                      >
+                        Test Error
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -425,7 +1597,7 @@ const AccountabilityApp: React.FC = () => {
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-4">
-                          <h3 className="font-semibold text-blue-800 dark:text-blue-400">Free Plan Usage</h3>
+                          <h3 className="font-semibold text-blue-800 dark:text-blue-400">Usage Summary</h3>
                           <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs font-medium">
                             Current Plan
                           </span>
@@ -628,7 +1800,7 @@ const AccountabilityApp: React.FC = () => {
                     {userTier === 'free' && (
                       <UpgradePrompt 
                         feature="Unlock More Goals"
-                        description="Free plan is limited to 2 goals. Upgrade to Standard for up to 10 goals, or Premium for unlimited goals."
+                        description="You're currently limited to 2 goals. Upgrade to Standard for up to 10 goals, or Premium for unlimited goals."
                         size="medium"
                         onUpgrade={handleUpgradeClick}
                       />
@@ -729,6 +1901,7 @@ const AccountabilityApp: React.FC = () => {
                     </div>
                     <div className="relative">
                       <button 
+                        onClick={canExportData ? handleExportData : undefined}
                         className={`px-4 py-2 rounded-lg transition-colors ${
                           canExportData 
                             ? 'bg-green-600 dark:bg-green-700 text-white hover:bg-green-700 dark:hover:bg-green-600' 
@@ -767,13 +1940,20 @@ const AccountabilityApp: React.FC = () => {
                 <div className="space-y-6">
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Account</h2>
-                    <div className="space-y-4">
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      const name = formData.get('name') as string;
+                      handleSaveSettings(name);
+                    }} className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                         <input 
                           type="text" 
-                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          name="name"
+                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
                           defaultValue={user?.name || ''}
+                          required
                         />
                       </div>
                       <div>
@@ -785,18 +1965,35 @@ const AccountabilityApp: React.FC = () => {
                           disabled
                         />
                       </div>
+                      <div className="flex space-x-3 pt-2">
+                        <button
+                          type="submit"
+                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg transition-all duration-300 transform hover:scale-105 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+                        >
+                          Save Changes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            localStorage.removeItem('hasSeenOnboarding');
+                            setShowOnboarding(true);
+                            setCurrentScreen('onboarding');
+                          }}
+                          className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-all duration-300"
+                        >
+                          View App Tour
+                        </button>
+                      </div>
                       <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
                         <button
-                          onClick={async () => {
-                            await signOut();
-                            setCurrentScreen('welcome');
-                          }}
+                          type="button"
+                          onClick={handleSignOut}
                           className="w-full p-3 text-left text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                         >
                           Sign Out
                         </button>
                       </div>
-                    </div>
+                    </form>
                   </div>
                 </div>
               </div>
@@ -915,8 +2112,8 @@ const AccountabilityApp: React.FC = () => {
                         <div className="font-medium text-gray-800 dark:text-white text-lg">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
                         <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                           {userTier === 'free' ? 'Limited features - Upgrade for full access' : 
-                           userTier === 'standard' ? '$15/month - Great for individuals' :
-                           '$35/month - Perfect for power users'}
+                           userTier === 'standard' ? '$9.99/month - Great for individuals' :
+                           '$19.99/month - Perfect for power users'}
                         </div>
                       </div>
                       <TierBadge tier={userTier} />
@@ -1029,7 +2226,7 @@ const AccountabilityApp: React.FC = () => {
                       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-blue-200 dark:border-blue-700">
                         <div className="text-center mb-6">
                           <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Standard Plan</h3>
-                          <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">$15</div>
+                          <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">$9.99</div>
                           <div className="text-sm text-gray-600 dark:text-gray-400">per month</div>
                         </div>
                         <ul className="space-y-2 mb-6">
@@ -1050,8 +2247,12 @@ const AccountabilityApp: React.FC = () => {
                             <span className="text-gray-600 dark:text-gray-400">Priority support</span>
                           </li>
                         </ul>
-                        <button className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                          ✨ Upgrade to Standard
+                        <button 
+                          onClick={() => handleSubscriptionChange('standard')}
+                          disabled={subscriptionLoading}
+                          className={`w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {subscriptionLoading ? 'Processing...' : '✨ Upgrade to Standard'}
                         </button>
                       </div>
 
@@ -1064,7 +2265,7 @@ const AccountabilityApp: React.FC = () => {
                         </div>
                         <div className="text-center mb-6">
                           <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Premium Plan</h3>
-                          <div className="text-3xl font-bold text-purple-600 dark:text-purple-400 mb-1">$35</div>
+                          <div className="text-3xl font-bold text-purple-600 dark:text-purple-400 mb-1">$19.99</div>
                           <div className="text-sm text-gray-600 dark:text-gray-400">per month</div>
                         </div>
                         <ul className="space-y-2 mb-6">
@@ -1089,8 +2290,12 @@ const AccountabilityApp: React.FC = () => {
                             <span className="text-gray-600 dark:text-gray-400">Custom integrations</span>
                           </li>
                         </ul>
-                        <button className="w-full px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 dark:hover:from-purple-500 dark:hover:to-purple-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                          ✨ Upgrade to Premium
+                        <button 
+                          onClick={() => handleSubscriptionChange('premium')}
+                          disabled={subscriptionLoading}
+                          className={`w-full px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 dark:hover:from-purple-500 dark:hover:to-purple-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {subscriptionLoading ? 'Processing...' : '✨ Upgrade to Premium'}
                         </button>
                       </div>
                     </div>
@@ -1107,7 +2312,7 @@ const AccountabilityApp: React.FC = () => {
                             <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
                           </div>
                           <div className="text-right">
-                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '15.00' : '35.00'}</div>
+                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '9.99' : '19.99'}</div>
                             <div className="text-sm text-green-600 dark:text-green-400">Paid</div>
                           </div>
                         </div>
@@ -1117,7 +2322,7 @@ const AccountabilityApp: React.FC = () => {
                             <div className="text-sm text-gray-600 dark:text-gray-400">{userTier.charAt(0).toUpperCase() + userTier.slice(1)} Plan</div>
                           </div>
                           <div className="text-right">
-                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '15.00' : '35.00'}</div>
+                            <div className="font-medium text-gray-800 dark:text-white">${userTier === 'standard' ? '9.99' : '19.99'}</div>
                             <div className="text-sm text-green-600 dark:text-green-400">Paid</div>
                           </div>
                         </div>
@@ -1130,16 +2335,32 @@ const AccountabilityApp: React.FC = () => {
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
                       <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Manage Subscription</h2>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button className="px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                        <button 
+                          onClick={handlePaymentMethodUpdate}
+                          disabled={subscriptionLoading}
+                          className={`px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
                           Update Payment Method
                         </button>
-                        <button className="px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                        <button 
+                          onClick={handleDownloadInvoices}
+                          disabled={subscriptionLoading}
+                          className={`px-4 py-2 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
                           Download Invoices
                         </button>
-                        <button className="px-4 py-2 border border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                        <button 
+                          onClick={handlePauseSubscription}
+                          disabled={subscriptionLoading}
+                          className={`px-4 py-2 border border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
                           Pause Subscription
                         </button>
-                        <button className="px-4 py-2 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        <button 
+                          onClick={handleCancelSubscription}
+                          disabled={subscriptionLoading}
+                          className={`px-4 py-2 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
                           Cancel Subscription
                         </button>
                       </div>
@@ -1151,111 +2372,167 @@ const AccountabilityApp: React.FC = () => {
 
             {currentPage === 'admin' && isAdmin && (
               <div>
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Admin Control Center</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Manage system settings, monitor performance, and oversee user operations</p>
+                    <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Admin Control Center</h1>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Real-time system monitoring and user management</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <TierBadge tier={userTier} />
-                    <div className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-full text-sm font-medium">
+                    <div className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-full text-xs font-medium">
                       Admin Access
                     </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Last updated: {adminData.lastUpdated.toLocaleTimeString()}
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                {adminLoading && (
+                  <div className="mb-4 text-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Loading admin data...</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                   {/* System Status Cards */}
-                  <div className="bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-xl p-6 text-white">
+                  <div className={`rounded-md p-3 text-white transition-all duration-300 ${
+                    adminData.systemStatus === 'online' ? 'bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700' :
+                    adminData.systemStatus === 'warning' ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 dark:from-yellow-600 dark:to-yellow-700' :
+                    'bg-gradient-to-r from-red-500 to-red-600 dark:from-red-600 dark:to-red-700'
+                  }`}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-semibold mb-2">System Status</h3>
-                        <div className="text-3xl font-bold">Online</div>
-                        <p className="text-green-100 dark:text-green-200 text-sm">All services operational</p>
+                        <h3 className="text-xs font-medium mb-1">System Status</h3>
+                        <div className="text-lg font-bold capitalize">{adminData.systemStatus}</div>
+                        <p className="text-green-100 dark:text-green-200 text-xs">
+                          {adminData.systemStatus === 'online' ? 'All services operational' : 
+                           adminData.systemStatus === 'warning' ? 'Some issues detected' : 'System down'}
+                        </p>
                       </div>
-                      <div className="text-4xl opacity-80">🟢</div>
+                      <div className="text-xl opacity-80">
+                        {adminData.systemStatus === 'online' ? '🟢' : 
+                         adminData.systemStatus === 'warning' ? '🟡' : '🔴'}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-xl p-6 text-white">
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-md p-3 text-white">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-semibold mb-2">Total Users</h3>
-                        <div className="text-3xl font-bold">1,247</div>
-                        <p className="text-blue-100 dark:text-blue-200 text-sm">+23 this week</p>
+                        <h3 className="text-xs font-medium mb-1">Total Users</h3>
+                        <div className="text-lg font-bold">{adminData.totalUsers.toLocaleString()}</div>
+                        <p className="text-blue-100 dark:text-blue-200 text-xs">{adminData.activeUsers} active today</p>
                       </div>
-                      <div className="text-4xl opacity-80">👥</div>
+                      <div className="text-xl opacity-80">👥</div>
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-xl p-6 text-white">
+                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-md p-3 text-white">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-semibold mb-2">Server Load</h3>
-                        <div className="text-3xl font-bold">34%</div>
-                        <p className="text-purple-100 dark:text-purple-200 text-sm">Optimal performance</p>
+                        <h3 className="text-xs font-medium mb-1">Server Load</h3>
+                        <div className="text-lg font-bold">{adminData.serverLoad}</div>
+                        <p className="text-purple-100 dark:text-purple-200 text-xs">
+                          {parseInt(adminData.serverLoad) > 70 ? 'High usage' : 'Optimal performance'}
+                        </p>
                       </div>
-                      <div className="text-4xl opacity-80">⚡</div>
+                      <div className="text-xl opacity-80">⚡</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 dark:from-indigo-600 dark:to-indigo-700 rounded-md p-3 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-medium mb-1">Activity</h3>
+                        <div className="text-lg font-bold">{adminData.totalGoals + adminData.totalCheckIns}</div>
+                        <p className="text-indigo-100 dark:text-indigo-200 text-xs">
+                          {adminData.totalGoals} goal{adminData.totalGoals !== 1 ? 's' : ''}, {adminData.totalCheckIns} check-in{adminData.totalCheckIns !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <div className="text-xl opacity-80">📊</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
                   {/* User Management */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white">User Management</h2>
-                      <div className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 rounded-full text-sm">
-                        Active Session
+                  <div className="bg-white dark:bg-gray-800 rounded-md shadow p-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-semibold text-gray-800 dark:text-white">Recent Users</h2>
+                      <div className="flex gap-1 text-xs">
+                        <span className="px-1 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 rounded text-xs">
+                          Free: {adminData.usersByTier.free}
+                        </span>
+                        <span className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 rounded text-xs">
+                          Standard: {adminData.usersByTier.standard}
+                        </span>
+                        <span className="px-1 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 rounded text-xs">
+                          Premium: {adminData.usersByTier.premium}
+                        </span>
                       </div>
                     </div>
                     
-                    <div className="space-y-4">
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-gray-800 dark:text-white">Current User</span>
-                          <span className="text-sm text-blue-600 dark:text-blue-400">{userTier} Tier</span>
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                          <p><strong>Email:</strong> {user?.email}</p>
-                          <p><strong>Name:</strong> {user?.name}</p>
-                          <p><strong>ID:</strong> {user?.id?.substring(0, 12)}...</p>
-                          <p><strong>Joined:</strong> {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button className="p-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm font-medium">
-                          📊 View Analytics
-                        </button>
-                        <button className="p-3 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors text-sm font-medium">
-                          💼 Manage Tiers
-                        </button>
-                        <button className="p-3 bg-orange-600 dark:bg-orange-700 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors text-sm font-medium">
-                          🔄 Reset Data
-                        </button>
-                        <button className="p-3 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors text-sm font-medium">
-                          📋 Export Data
-                        </button>
-                      </div>
+                    <div className="space-y-1 max-h-80 overflow-y-auto">
+                      {adminData.recentUsers.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-center py-2 text-xs">No users found</p>
+                      ) : (
+                        adminData.recentUsers.map((userItem: any) => (
+                          <div key={userItem.id} className="p-2 border border-blue-200 dark:border-blue-700 rounded hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1 mb-1">
+                                  <span className="font-medium text-gray-800 dark:text-white text-xs">
+                                    {userItem.name || userItem.displayName || 'Unknown User'}
+                                  </span>
+                                  <TierBadge tier={userItem.tier || 'free'} />
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">
+                                  <p className="truncate">{userItem.email}</p>
+                                  {userItem.username && <p>@{userItem.username}</p>}
+                                  <p>ID: {userItem.id.substring(0, 8)}...</p>
+                                  <p>Joined: {userItem.createdAt ? 
+                                    new Date(userItem.createdAt.toDate?.() || userItem.createdAt).toLocaleDateString() : 
+                                    'Unknown'
+                                  }</p>
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <select
+                                  value={userItem.tier || 'free'}
+                                  onChange={(e) => handleUserTierChange(userItem.id, e.target.value)}
+                                  className="text-xs px-1 py-0.5 border border-blue-200 dark:border-blue-700 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  <option value="free">Free</option>
+                                  <option value="standard">Standard</option>
+                                  <option value="premium">Premium</option>
+                                </select>
+                                <button
+                                  onClick={() => handleDeleteUser(userItem.id)}
+                                  className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
 
                   {/* System Configuration */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">System Configuration</h2>
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">System Configuration</h2>
                     
-                    <div className="space-y-4">
-                      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                        <h3 className="font-medium text-yellow-800 dark:text-yellow-400 mb-2">Feature Limits</h3>
-                        <div className="text-sm text-yellow-700 dark:text-yellow-400 space-y-1">
+                    <div className="space-y-3">
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                        <h3 className="font-medium text-yellow-800 dark:text-yellow-400 mb-2 text-sm">Feature Limits</h3>
+                        <div className="text-xs text-yellow-700 dark:text-yellow-400 space-y-1">
                           <div className="flex justify-between">
-                            <span>Max Goals:</span>
-                            <span>{getFeatureLimit('maxGoals') === -1 ? 'Unlimited' : getFeatureLimit('maxGoals')}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Daily Check-ins:</span>
-                            <span>{getFeatureLimit('maxCheckInsPerDay') === -1 ? 'Unlimited' : getFeatureLimit('maxCheckInsPerDay')}</span>
+                            <span>Max Goals (Free):</span>
+                            <span>{getFeatureLimit('goals') === -1 ? 'Unlimited' : getFeatureLimit('goals')}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Advanced Analytics:</span>
@@ -1268,9 +2545,9 @@ const AccountabilityApp: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
-                        <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-2">Environment Info</h3>
-                        <div className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                        <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-2 text-sm">Environment Info</h3>
+                        <div className="text-xs text-blue-700 dark:text-blue-400 space-y-1">
                           <div className="flex justify-between">
                             <span>Environment:</span>
                             <span className="font-mono">{process.env.NODE_ENV || 'development'}</span>
@@ -1285,82 +2562,86 @@ const AccountabilityApp: React.FC = () => {
                           </div>
                           <div className="flex justify-between">
                             <span>Last Updated:</span>
-                            <span>{new Date().toLocaleTimeString()}</span>
+                            <span>{adminData.lastUpdated.toLocaleTimeString()}</span>
                           </div>
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button 
+                          onClick={() => {
+                            fetchAdminData();
+                            addSystemLog('Manual data refresh triggered', 'admin');
+                          }}
+                          className="p-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-xs font-medium"
+                        >
+                          🔄 Refresh Data
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            // Update current user's activity and refresh data
+                            if (user?.id) {
+                              try {
+                                await updateDoc(doc(db, 'users', user.id), {
+                                  lastSeen: new Date(),
+                                  lastActive: new Date()
+                                });
+                                await fetchAdminData();
+                                addSystemLog('User activity updated and data refreshed', 'admin');
+                              } catch (error) {
+                                addSystemLog(`Error updating activity: ${error}`, 'error');
+                              }
+                            }
+                          }}
+                          className="p-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors text-xs font-medium"
+                        >
+                          ✅ Update Activity
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 mt-2">
+                        <button 
+                          onClick={() => {
+                            setAdminData(prev => ({ ...prev, systemLogs: [] }));
+                            addSystemLog('System logs cleared', 'admin');
+                          }}
+                          className="p-2 bg-orange-600 dark:bg-orange-700 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors text-xs font-medium"
+                        >
+                          🗑️ Clear Logs
+                        </button>
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* System Tools */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 xl:col-span-2">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">Administrative Tools</h2>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🔧</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">System Maintenance</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Clear cache, optimize database</p>
+                {/* System Logs */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
+                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">System Logs</h2>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {adminData.systemLogs.length === 0 ? (
+                      <p className="text-gray-500 dark:text-gray-400 text-center py-4">No logs available</p>
+                    ) : (
+                      adminData.systemLogs.map((log: any) => (
+                        <div key={log.id} className={`p-2 rounded-lg border-l-4 ${
+                          log.type === 'error' ? 'bg-red-50 dark:bg-red-900/20 border-red-500' :
+                          log.type === 'admin' ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500' :
+                          'bg-gray-50 dark:bg-gray-700/50 border-gray-500'
+                        }`}>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className={`font-medium ${
+                              log.type === 'error' ? 'text-red-800 dark:text-red-400' :
+                              log.type === 'admin' ? 'text-blue-800 dark:text-blue-400' :
+                              'text-gray-800 dark:text-gray-300'
+                            }`}>
+                              {log.message}
+                            </span>
+                            <div className="text-gray-500 dark:text-gray-400 text-xs">
+                              <span>{log.user}</span>
+                              <span className="ml-2">{log.timestamp.toLocaleTimeString()}</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📊</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Usage Analytics</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">View detailed usage metrics</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🛡️</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Security Center</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Manage access & permissions</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📝</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">System Logs</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">View application logs</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">⚙️</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">App Settings</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Configure app behavior</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📦</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Backup Manager</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Create & restore backups</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🔄</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Data Migration</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Import & export user data</p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer group">
-                        <div className="text-center">
-                          <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📧</div>
-                          <h3 className="font-medium text-gray-800 dark:text-white mb-1">Notifications</h3>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">Manage system notifications</p>
-                        </div>
-                      </div>
-                    </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -1378,6 +2659,8 @@ const AccountabilityApp: React.FC = () => {
   }
 
   switch (currentScreen) {
+    case 'onboarding':
+      return <OnboardingFlow onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />;
     case 'login':
       return renderLoginScreen();
     case 'signup':

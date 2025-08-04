@@ -57,6 +57,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: firebaseUser.displayName || 'User',
             createdAt: new Date(),
             subscription: 'free',
+            lastActive: new Date(),
+            hasEngaged: false, // Track if user has actually used the app
             preferences: {
               timezone: 'UTC',
               notificationTime: '09:00',
@@ -91,6 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name,
       createdAt: new Date(),
       subscription: 'free',
+      lastActive: new Date(),
+      hasEngaged: false, // Track if user has actually used the app
       preferences: {
         timezone: 'UTC',
         notificationTime: '09:00',

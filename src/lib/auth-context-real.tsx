@@ -10,7 +10,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { User } from '@/types';
 
@@ -27,7 +27,7 @@ interface AuthContextType {
   canAccessFeature: (feature: string) => boolean;
   getFeatureLimit: (feature: string) => number | null;
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ success: boolean; error?: string }>;
+  signUp: (email: string, password: string, displayName: string, username?: string) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   clearError: () => void;
@@ -56,6 +56,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearError = () => setError(null);
 
+  // Track user activity when they log in or are active
+  const updateUserActivity = async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        lastSeen: serverTimestamp(),
+        lastActive: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error updating user activity:', error);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setFirebaseUser(firebaseUser);
@@ -82,6 +94,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
 
+            // Update user activity when they sign in
+            await updateUserActivity(firebaseUser.uid);
+
             setUser({
               ...userData,
               id: firebaseUser.uid,
@@ -94,6 +109,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: firebaseUser.email!,
               name: firebaseUser.displayName || 'User',
               subscription: 'free',
+              stripeCustomerId: null,
+              stripeSubscriptionId: null,
+              subscriptionStatus: 'inactive',
               createdAt: new Date(),
               preferences: {
                 timezone: 'UTC',
@@ -106,7 +124,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             await setDoc(doc(db, 'users', firebaseUser.uid), {
               ...newUser,
-              createdAt: serverTimestamp()
+              createdAt: serverTimestamp(),
+              lastSeen: new Date(),
+              lastActive: new Date(),
             });
             
             setUser(newUser);
@@ -137,7 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, displayName: string) => {
+  const signUp = async (email: string, password: string, displayName: string, username?: string) => {
     try {
       clearError();
       const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password);
@@ -147,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: firebaseUser.uid,
         email: firebaseUser.email!,
         name: displayName,
+        username: username?.toLowerCase() || null,
         subscription: 'free',
         createdAt: new Date(),
         preferences: {

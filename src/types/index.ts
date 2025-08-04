@@ -2,10 +2,19 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  username?: string | null;
   avatar?: string;
   createdAt: Date;
   subscription: SubscriptionTier;
   preferences: UserPreferences;
+  // Stripe integration fields
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionStatus?: 'active' | 'inactive' | 'cancelled' | 'past_due';
+  // Activity tracking
+  lastActive?: Date;
+  lastSeen?: Date;
+  hasEngaged?: boolean; // Track if user has actually used the app (created goals/check-ins)
 }
 
 export interface UserPreferences {
