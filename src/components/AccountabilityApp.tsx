@@ -17,9 +17,9 @@ const AccountabilityApp: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('onboarding');
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(() => {
-    // Check if user has seen onboarding before
+    // Show onboarding only if user has never created an account
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('hasSeenOnboarding') !== 'true';
+      return localStorage.getItem('hasCreatedAccount') !== 'true';
     }
     return true;
   });
@@ -85,17 +85,22 @@ const AccountabilityApp: React.FC = () => {
 
   useEffect(() => {
     if (user) {
+      // User is logged in - go to dashboard and mark that they have an account
+      localStorage.setItem('hasCreatedAccount', 'true');
+      setShowOnboarding(false);
       setCurrentScreen('dashboard');
     } else if (!showOnboarding) {
+      // User has created account before but not currently logged in - show welcome/login
       setCurrentScreen('welcome');
     } else {
+      // New user who has never created an account - show onboarding
       setCurrentScreen('onboarding');
     }
   }, [user, showOnboarding]);
 
   // Onboarding handlers
   const handleOnboardingComplete = () => {
-    localStorage.setItem('hasSeenOnboarding', 'true');
+    // User has seen onboarding but hasn't created account yet - go to signup
     setShowOnboarding(false);
     if (user) {
       setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
@@ -105,7 +110,7 @@ const AccountabilityApp: React.FC = () => {
   };
 
   const handleOnboardingSkip = () => {
-    localStorage.setItem('hasSeenOnboarding', 'true');
+    // User skipped onboarding but hasn't created account yet - go to welcome
     setShowOnboarding(false);
     if (user) {
       setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
@@ -618,6 +623,9 @@ const AccountabilityApp: React.FC = () => {
     
     try {
       await signInWithGoogle();
+      // Mark that user has created/used an account (for first time Google users)
+      localStorage.setItem('hasCreatedAccount', 'true');
+      setShowOnboarding(false);
       // Success - the useEffect will handle navigation when user state updates
       addToast({
         type: 'success',
@@ -1820,73 +1828,511 @@ const AccountabilityApp: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Basic Progress */}
+                  {/* Enhanced Weekly Overview */}
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Weekly Overview</h2>
-                    <div className="space-y-3">
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">📅 Weekly Progress</h2>
+                    <div className="space-y-4">
+                        {Array.from({ length: 7 }, (_, index) => {
+                        // Show 4 days ago, 3 days ago, 2 days ago, 1 day ago, today, tomorrow, day after tomorrow
                         const dayDate = new Date();
-                        dayDate.setDate(dayDate.getDate() - (6 - index));
-                        const dateString = dayDate.toDateString();
-                        const hasCheckIn = checkIns.some(checkIn => 
-                          new Date(checkIn.date).toDateString() === dateString
-                        );
+                        dayDate.setDate(dayDate.getDate() + (index - 4)); // -4 to +2 range
+                        const dateString = dayDate.toISOString().split('T')[0];
+                        const dayCheckIn = checkIns.find(checkIn => checkIn.date === dateString);
+                        const isToday = dateString === new Date().toISOString().split('T')[0];
+                        const isFuture = dayDate > new Date();
+                        const isMissed = !dayCheckIn && !isToday && !isFuture;
+                        const hasGoals = goals.length > 0;
+                        const completedGoals = goals.filter(g => g.completed).length;
+                        
+                        // Get day name
+                        const dayName = dayDate.toLocaleDateString('en', { weekday: 'short' });
                         
                         return (
-                          <div key={day} className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400 font-medium">{day}</span>
-                            <div className="flex gap-1">
-                              {goals.slice(0, 3).map((goal, goalIndex) => (
-                                <div 
-                                  key={goalIndex}
-                                  className={`w-6 h-6 rounded ${
-                                    hasCheckIn && goal.progress > 0 ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-600'
-                                  }`}
-                                />
-                              ))}
-                              {goals.length === 0 && (
-                                <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600" />
-                              )}
+                          <div key={index} className={`flex items-center justify-between p-3 rounded-lg transition-all duration-200 ${
+                            isToday ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-700' : 
+                            isMissed ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700' :
+                            dayCheckIn ? 'bg-green-50 dark:bg-green-900/20' :
+                            'bg-gray-50 dark:bg-gray-700/50'
+                          }`}>
+                            <div className="flex items-center gap-3">
+                              <span className={`font-medium ${
+                                isToday ? 'text-blue-600 dark:text-blue-400' : 
+                                isMissed ? 'text-red-600 dark:text-red-400' :
+                                dayCheckIn ? 'text-green-600 dark:text-green-400' :
+                                'text-gray-600 dark:text-gray-400'
+                              }`}>
+                                {dayName}
+                              </span>
+                              <span className="text-sm text-gray-500 dark:text-gray-500">
+                                {dayDate.toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                              </span>
+                              {isToday && <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">Today</span>}
+                              {isMissed && <span className="text-xs bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-400 px-2 py-1 rounded-full">Missed</span>}
+                              {isFuture && !isToday && <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-1 rounded-full">Future</span>}
                             </div>
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                              {hasCheckIn ? `${Math.min(goals.length, 3)}/${Math.max(goals.length, 1)}` : '0/1'}
-                            </span>
+                            
+                            <div className="flex items-center gap-3">
+                              {/* Single Clean Status Indicator */}
+                              <div className="flex items-center gap-3 flex-1">
+                                {dayCheckIn ? (
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                                      <span className="text-white text-sm font-bold">✓</span>
+                                    </div>
+                                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                                      {dayCheckIn.rating}/10
+                                    </span>
+                                  </div>
+                                ) : isMissed ? (
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center">
+                                      <span className="text-white text-sm font-bold">✗</span>
+                                    </div>
+                                    <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                                      Missed
+                                    </span>
+                                  </div>
+                                ) : isToday ? (
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-blue-500 animate-pulse flex items-center justify-center">
+                                      <span className="text-white text-sm font-bold">!</span>
+                                    </div>
+                                    <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                                      Pending
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                      <span className="text-gray-500 text-sm">○</span>
+                                    </div>
+                                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                                      Future
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Daily Score Emoji */}
+                              <div className="text-right">
+                                <div className="text-xl">
+                                  {dayCheckIn ? (
+                                    <span title={`Rating: ${dayCheckIn.rating}/10`}>
+                                      {dayCheckIn.rating >= 8 ? '🔥' : 
+                                       dayCheckIn.rating >= 6 ? '⚡' : 
+                                       dayCheckIn.rating >= 4 ? '📈' : '😅'}
+                                    </span>
+                                  ) : isMissed ? (
+                                    <span title="Missed day">💔</span>
+                                  ) : isToday ? (
+                                    <span title="Today - check in pending">⏰</span>
+                                  ) : (
+                                    <span className="text-gray-400">⭕</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         );
                       })}
+                      
+                      {/* Weekly Summary */}
+                      <div className="mt-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg">
+                        <h3 className="font-medium text-indigo-800 dark:text-indigo-400 mb-2">📊 This Week</h3>
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                          <div>
+                            <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400">
+                              {checkIns.filter(c => {
+                                const checkInDate = new Date(c.date);
+                                const weekAgo = new Date();
+                                weekAgo.setDate(weekAgo.getDate() - 7);
+                                return checkInDate >= weekAgo;
+                              }).length}/7
+                            </div>
+                            <div className="text-xs text-indigo-700 dark:text-indigo-400">Check-ins</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                              {goals.filter(g => g.completed).length}/{goals.length || 1}
+                            </div>
+                            <div className="text-xs text-purple-700 dark:text-purple-400">Goals Done</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold text-pink-600 dark:text-pink-400">
+                              {checkIns.length > 0 ? 
+                                Math.round(checkIns.filter(c => {
+                                  const checkInDate = new Date(c.date);
+                                  const weekAgo = new Date();
+                                  weekAgo.setDate(weekAgo.getDate() - 7);
+                                  return checkInDate >= weekAgo;
+                                }).reduce((sum, c) => sum + c.rating, 0) / Math.max(checkIns.filter(c => {
+                                  const checkInDate = new Date(c.date);
+                                  const weekAgo = new Date();
+                                  weekAgo.setDate(weekAgo.getDate() - 7);
+                                  return checkInDate >= weekAgo;
+                                }).length, 1)) : 0}/10
+                            </div>
+                            <div className="text-xs text-pink-700 dark:text-pink-400">Avg Rating</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   {/* Advanced Analytics */}
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 relative">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Advanced Analytics</h2>
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Smart Analytics</h2>
                     {userTier === 'free' ? (
                       <UpgradePrompt 
-                        feature="Advanced Analytics"
-                        description="Get detailed insights, trends, performance metrics, and custom charts with Standard or Premium plans."
+                        feature="Smart Analytics Dashboard"
+                        description="Unlock AI-powered insights, streak tracking, completion forecasts, and interactive progress charts with Standard or Premium plans."
                         size="large"
                         onUpgrade={handleUpgradeClick}
                       />
                     ) : (
-                      <div className="space-y-4">
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                          <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-2">Completion Trends</h3>
-                          <div className="h-32 bg-gradient-to-r from-blue-100 to-blue-200 dark:from-blue-800/40 dark:to-blue-700/40 rounded flex items-center justify-center">
-                            <span className="text-blue-600 dark:text-blue-400">📈 Interactive Chart</span>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                      <div className="space-y-6">
+                        {/* Key Metrics */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl text-center">
                             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                               {checkIns.length > 0 ? Math.round((checkIns.reduce((sum, checkIn) => sum + checkIn.rating, 0) / checkIns.length / 10) * 100) : 0}%
                             </div>
                             <div className="text-sm text-green-700 dark:text-green-400">Avg Rating</div>
+                            <div className="text-xs text-green-600 dark:text-green-500 mt-1">
+                              {checkIns.length > 0 && checkIns[0]?.rating >= 7 ? '📈 Trending up' : ''}
+                            </div>
                           </div>
-                          <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center">
-                            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{checkIns.length}</div>
-                            <div className="text-sm text-purple-700 dark:text-purple-400">Total Check-ins</div>
+                          <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl text-center">
+                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{checkIns.length}</div>
+                            <div className="text-sm text-blue-700 dark:text-blue-400">Total Check-ins</div>
+                            <div className="text-xs text-blue-600 dark:text-blue-500 mt-1">
+                              {checkIns.length > 7 ? '🔥 Great momentum!' : ''}
+                            </div>
+                          </div>
+                          <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl text-center">
+                            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                              {goals.filter(g => g.completed).length}
+                            </div>
+                            <div className="text-sm text-purple-700 dark:text-purple-400">Goals Completed</div>
+                            <div className="text-xs text-purple-600 dark:text-purple-500 mt-1">
+                              {goals.filter(g => g.completed).length > 0 ? '🎯 Well done!' : ''}
+                            </div>
+                          </div>
+                          <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-xl text-center">
+                            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                              {(() => {
+                                const today = new Date().toISOString().split('T')[0];
+                                let streak = 0;
+                                const sortedCheckIns = [...checkIns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                                for (let i = 0; i < sortedCheckIns.length; i++) {
+                                  const checkInDate = new Date(sortedCheckIns[i].date);
+                                  const expectedDate = new Date();
+                                  expectedDate.setDate(expectedDate.getDate() - i);
+                                  if (checkInDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
+                                    streak++;
+                                  } else {
+                                    break;
+                                  }
+                                }
+                                return streak;
+                              })()}
+                            </div>
+                            <div className="text-sm text-orange-700 dark:text-orange-400">Day Streak</div>
+                            <div className="text-xs text-orange-600 dark:text-orange-500 mt-1">
+                              {(() => {
+                                const streak = (() => {
+                                  const today = new Date().toISOString().split('T')[0];
+                                  let streak = 0;
+                                  const sortedCheckIns = [...checkIns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                                  for (let i = 0; i < sortedCheckIns.length; i++) {
+                                    const checkInDate = new Date(sortedCheckIns[i].date);
+                                    const expectedDate = new Date();
+                                    expectedDate.setDate(expectedDate.getDate() - i);
+                                    if (checkInDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
+                                      streak++;
+                                    } else {
+                                      break;
+                                    }
+                                  }
+                                  return streak;
+                                })();
+                                return streak >= 7 ? '🔥 On fire!' : streak >= 3 ? '⚡ Building momentum' : '';
+                              })()}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Progress Visualization */}
+                        <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl">
+                          <h3 className="font-medium text-blue-800 dark:text-blue-400 mb-4">📊 7-Day Progress Trend</h3>
+                          <div className="flex items-end justify-between h-32 px-2">
+                            {Array.from({ length: 7 }, (_, i) => {
+                              const date = new Date();
+                              date.setDate(date.getDate() - (6 - i));
+                              const dateString = date.toISOString().split('T')[0];
+                              const dayCheckIn = checkIns.find(c => c.date === dateString);
+                              const height = dayCheckIn ? (dayCheckIn.rating / 10) * 100 : 0;
+                              
+                              return (
+                                <div key={i} className="flex flex-col items-center flex-1">
+                                  <div 
+                                    className={`w-6 rounded-t-lg transition-all duration-500 ${
+                                      height > 70 ? 'bg-green-500' : 
+                                      height > 50 ? 'bg-yellow-500' : 
+                                      height > 0 ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'
+                                    }`}
+                                    style={{ height: `${Math.max(height, 4)}%` }}
+                                  />
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                    {date.toLocaleDateString('en', { weekday: 'short' })}
+                                  </span>
+                                  {dayCheckIn && (
+                                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                                      {dayCheckIn.rating}/10
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* AI Insights - Actionable and Interactive */}
+                        <div className="p-6 bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-purple-900/20 dark:via-pink-900/20 dark:to-indigo-900/20 rounded-xl border-2 border-purple-200 dark:border-purple-700">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                              <span className="text-white text-lg">🎯</span>
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-purple-800 dark:text-purple-400 text-lg">Your Action Plan</h3>
+                              <p className="text-sm text-purple-600 dark:text-purple-300">Things you can do right now to improve</p>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            {(() => {
+                              const actions = [];
+                              const today = new Date().toISOString().split('T')[0];
+                              const hasCheckedInToday = checkIns.find(c => c.date === today);
+                              const incompleteGoals = goals.filter(g => !g.completed);
+                              const avgRating = checkIns.length > 0 ? checkIns.reduce((sum, c) => sum + c.rating, 0) / checkIns.length : 0;
+                              const recentCheckIns = checkIns.slice(0, 3);
+                              const recentAvg = recentCheckIns.length > 0 ? recentCheckIns.reduce((sum, c) => sum + c.rating, 0) / recentCheckIns.length : 0;
+                              
+                              const missedDaysThisWeek = Array.from({ length: 7 }, (_, i) => {
+                                const date = new Date();
+                                date.setDate(date.getDate() - (6 - i));
+                                const dateString = date.toISOString().split('T')[0];
+                                const isToday = dateString === today;
+                                const isFuture = date > new Date();
+                                return !checkIns.find(c => c.date === dateString) && !isToday && !isFuture;
+                              }).filter(Boolean).length;
+                              
+                              // Priority 1: Today's check-in
+                              if (!hasCheckedInToday) {
+                                actions.push({
+                                  icon: '⏰',
+                                  type: 'urgent',
+                                  title: 'Complete Today\'s Check-in',
+                                  message: 'You haven\'t checked in today yet! This is your #1 priority to maintain your accountability habit.',
+                                  action: 'Go to Check-ins tab and rate your day now',
+                                  actionable: true,
+                                  priority: 1
+                                });
+                              }
+                              
+                              // Priority 2: Incomplete goals
+                              if (incompleteGoals.length > 0) {
+                                const urgentGoals = incompleteGoals.slice(0, 2);
+                                actions.push({
+                                  icon: '🎯',
+                                  type: 'action',
+                                  title: 'Focus on Your Goals',
+                                  message: `You have ${incompleteGoals.length} active goal${incompleteGoals.length > 1 ? 's' : ''}. Pick one to work on right now: "${urgentGoals[0].title}"`,
+                                  action: 'Go to Goals tab and mark progress on this goal',
+                                  actionable: true,
+                                  priority: 2
+                                });
+                              }
+                              
+                              // Priority 3: Consistency issues
+                              if (missedDaysThisWeek > 0 && checkIns.length > 0) {
+                                actions.push({
+                                  icon: '🔔',
+                                  type: 'habit',
+                                  title: 'Set a Daily Reminder',
+                                  message: `You missed ${missedDaysThisWeek} day${missedDaysThisWeek > 1 ? 's' : ''} this week. Consistency beats perfection!`,
+                                  action: 'Set a phone alarm for the same time daily to check in',
+                                  actionable: true,
+                                  priority: 3
+                                });
+                              }
+                              
+                              // Priority 4: Create goals if none exist
+                              if (goals.length === 0) {
+                                actions.push({
+                                  icon: '🚀',
+                                  type: 'setup',
+                                  title: 'Create Your First Goal',
+                                  message: 'Start your accountability journey by setting a clear, specific goal you want to achieve.',
+                                  action: 'Go to Goals tab and create a goal that excites you',
+                                  actionable: true,
+                                  priority: 4
+                                });
+                              }
+                              
+                              // Priority 5: Improve low ratings
+                              if (recentAvg < 6 && recentCheckIns.length >= 2) {
+                                actions.push({
+                                  icon: '📈',
+                                  type: 'improvement',
+                                  title: 'Boost Your Daily Score',
+                                  message: `Your recent average is ${Math.round(recentAvg * 10)/10}/10. Let's identify what would make tomorrow better.`,
+                                  action: 'Write down 3 specific things that would improve tomorrow',
+                                  actionable: true,
+                                  priority: 5
+                                });
+                              }
+                              
+                              // Priority 6: Celebrate wins
+                              if (hasCheckedInToday && avgRating >= 7 && goals.filter(g => g.completed).length > 0) {
+                                actions.push({
+                                  icon: '🎉',
+                                  type: 'celebrate',
+                                  title: 'Celebrate Your Progress',
+                                  message: `You're doing great! Average rating of ${Math.round(avgRating * 10)/10}/10 and completed goals. Time to acknowledge your success.`,
+                                  action: 'Take 2 minutes to appreciate what you\'ve accomplished',
+                                  actionable: true,
+                                  priority: 6
+                                });
+                              }
+                              
+                              // Default action for new users
+                              if (actions.length === 0) {
+                                actions.push({
+                                  icon: '💪',
+                                  type: 'start',
+                                  title: 'Start Building Your Habit',
+                                  message: 'Every expert was once a beginner. Your accountability journey starts with one small step.',
+                                  action: hasCheckedInToday ? 'Create your first goal in the Goals tab' : 'Complete your first check-in today',
+                                  actionable: true,
+                                  priority: 7
+                                });
+                              }
+                              
+                              // Sort by priority and show top 3
+                              return actions
+                                .sort((a, b) => a.priority - b.priority)
+                                .slice(0, 3)
+                                .map((action, index) => (
+                                <div key={index} className={`p-4 rounded-lg border-l-4 ${
+                                  action.type === 'urgent' ? 'bg-red-50 dark:bg-red-900/20 border-red-500' :
+                                  action.type === 'action' ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500' :
+                                  action.type === 'habit' ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-500' :
+                                  action.type === 'celebrate' ? 'bg-green-50 dark:bg-green-900/20 border-green-500' :
+                                  'bg-purple-50 dark:bg-purple-900/20 border-purple-500'
+                                }`}>
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-2xl">{action.icon}</span>
+                                    <div className="flex-1">
+                                      <h4 className={`font-semibold mb-1 ${
+                                        action.type === 'urgent' ? 'text-red-800 dark:text-red-400' :
+                                        action.type === 'action' ? 'text-blue-800 dark:text-blue-400' :
+                                        action.type === 'habit' ? 'text-yellow-800 dark:text-yellow-400' :
+                                        action.type === 'celebrate' ? 'text-green-800 dark:text-green-400' :
+                                        'text-purple-800 dark:text-purple-400'
+                                      }`}>
+                                        {action.title}
+                                      </h4>
+                                      <p className={`text-sm mb-3 ${
+                                        action.type === 'urgent' ? 'text-red-700 dark:text-red-300' :
+                                        action.type === 'action' ? 'text-blue-700 dark:text-blue-300' :
+                                        action.type === 'habit' ? 'text-yellow-700 dark:text-yellow-300' :
+                                        action.type === 'celebrate' ? 'text-green-700 dark:text-green-300' :
+                                        'text-purple-700 dark:text-purple-300'
+                                      }`}>
+                                        {action.message}
+                                      </p>
+                                      <button 
+                                        onClick={() => {
+                                          if (action.title.includes('Check-in')) {
+                                            setCurrentPage('checkins');
+                                          } else if (action.title.includes('Goal')) {
+                                            setCurrentPage('goals');
+                                          }
+                                          addToast({
+                                            title: 'Action Noted!',
+                                            description: `Ready to: ${action.action}`,
+                                            type: 'success'
+                                          });
+                                        }}
+                                        className={`text-xs font-medium px-3 py-2 rounded-full transition-all duration-200 hover:scale-105 ${
+                                        action.type === 'urgent' ? 'bg-red-500 hover:bg-red-600 text-white' :
+                                        action.type === 'action' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
+                                        action.type === 'habit' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' :
+                                        action.type === 'celebrate' ? 'bg-green-500 hover:bg-green-600 text-white' :
+                                        'bg-purple-500 hover:bg-purple-600 text-white'
+                                      }`}>
+                                        🚀 {action.action}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                          
+                          {/* Quick Action Buttons */}
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {!checkIns.find(c => c.date === new Date().toISOString().split('T')[0]) && (
+                              <button 
+                                onClick={() => setCurrentPage('checkins')}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-200 text-sm font-medium"
+                              >
+                                ⚡ Quick Check-in
+                              </button>
+                            )}
+                            {goals.filter(g => !g.completed).length === 0 && (
+                              <button 
+                                onClick={() => setCurrentPage('goals')}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all duration-200 text-sm font-medium"
+                              >
+                                🎯 Add Goal
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Goal Progress Overview */}
+                        {goals.length > 0 && (
+                          <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl">
+                            <h3 className="font-medium text-green-800 dark:text-green-400 mb-3">🎯 Goal Progress Overview</h3>
+                            <div className="space-y-3">
+                              {goals.slice(0, 3).map((goal, index) => (
+                                <div key={goal.id} className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
+                                      {goal.title}
+                                    </div>
+                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                      <div 
+                                        className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                                        style={{ width: `${goal.progress}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="ml-4 text-sm font-medium text-green-600 dark:text-green-400">
+                                    {goal.progress}%
+                                  </div>
+                                </div>
+                              ))}
+                              {goals.length > 3 && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 text-center pt-2">
+                                  And {goals.length - 3} more goals...
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1975,7 +2421,7 @@ const AccountabilityApp: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            localStorage.removeItem('hasSeenOnboarding');
+                            localStorage.removeItem('hasCreatedAccount');
                             setShowOnboarding(true);
                             setCurrentScreen('onboarding');
                           }}
