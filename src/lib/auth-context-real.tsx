@@ -8,7 +8,10 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
+  OAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -29,6 +32,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUp: (email: string, password: string, displayName: string, username?: string) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithApple: () => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   clearError: () => void;
 }
@@ -69,6 +73,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Handle redirect results for mobile OAuth
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          // User signed in via redirect
+          console.log('OAuth redirect successful:', result.user.email);
+        }
+      } catch (error) {
+        console.error('OAuth redirect error:', error);
+        setError('OAuth sign-in failed. Please try again.');
+      }
+    };
+
+    handleRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setFirebaseUser(firebaseUser);
       
@@ -196,10 +216,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       clearError();
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      return { success: true };
+      provider.addScope('email');
+      provider.addScope('profile');
+      
+      // For mobile devices, use redirect. For desktop, use popup
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return { success: true };
+      } else {
+        await signInWithPopup(auth, provider);
+        return { success: true };
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'An error occurred during Google sign in';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const signInWithApple = async () => {
+    try {
+      clearError();
+      const provider = new OAuthProvider('apple.com');
+      provider.addScope('email');
+      provider.addScope('name');
+      
+      // For mobile devices, use redirect. For desktop, use popup
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return { success: true };
+      } else {
+        await signInWithPopup(auth, provider);
+        return { success: true };
+      }
+    } catch (err: any) {
+      const errorMessage = err.message || 'An error occurred during Apple sign in';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     }
@@ -253,6 +308,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signIn,
     signUp,
     signInWithGoogle,
+    signInWithApple,
     signOut,
     clearError,
   };

@@ -12,7 +12,7 @@ import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, upd
 import { db } from '@/lib/firebase';
 
 const AccountabilityApp: React.FC = () => {
-  const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signOut, clearError } = useAuth();
+  const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signInWithApple, signOut, clearError } = useAuth();
   const { addToast } = useToaster();
   const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('onboarding');
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -622,20 +622,53 @@ const AccountabilityApp: React.FC = () => {
     setSubmitLoading(true);
     
     try {
-      await signInWithGoogle();
-      // Mark that user has created/used an account (for first time Google users)
-      localStorage.setItem('hasCreatedAccount', 'true');
-      setShowOnboarding(false);
-      // Success - the useEffect will handle navigation when user state updates
-      addToast({
-        type: 'success',
-        title: 'Welcome!',
-        description: 'Successfully signed in with Google.'
-      });
+      const result = await signInWithGoogle();
+      if (result.success) {
+        // Mark that user has created/used an account (for first time Google users)
+        localStorage.setItem('hasCreatedAccount', 'true');
+        setShowOnboarding(false);
+        // Success - the useEffect will handle navigation when user state updates
+        addToast({
+          type: 'success',
+          title: 'Welcome!',
+          description: 'Successfully signed in with Google.'
+        });
+      } else {
+        throw new Error(result.error || 'Google sign-in failed');
+      }
     } catch (error: any) {
       addToast({
         type: 'error',
         title: 'Google sign-in failed',
+        description: error.message || 'Please try again or use email/password sign-in.'
+      });
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setSubmitLoading(true);
+    
+    try {
+      const result = await signInWithApple();
+      if (result.success) {
+        // Mark that user has created/used an account (for first time Apple users)
+        localStorage.setItem('hasCreatedAccount', 'true');
+        setShowOnboarding(false);
+        // Success - the useEffect will handle navigation when user state updates
+        addToast({
+          type: 'success',
+          title: 'Welcome!',
+          description: 'Successfully signed in with Apple.'
+        });
+      } else {
+        throw new Error(result.error || 'Apple sign-in failed');
+      }
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Apple sign-in failed',
         description: error.message || 'Please try again or use email/password sign-in.'
       });
     } finally {
@@ -968,16 +1001,18 @@ const AccountabilityApp: React.FC = () => {
               <button
                 onClick={handleGoogleSignIn}
                 disabled={submitLoading}
-                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                🔍 Sign in with Google
+                <span className="text-lg">🔍</span>
+                Sign in with Google
               </button>
               <button
-                disabled={true}
-                className="w-full px-6 py-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                title="Apple Sign-in coming soon"
+                onClick={handleAppleSignIn}
+                disabled={submitLoading}
+                className="w-full px-6 py-3 border border-gray-800 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-black dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                🍎 Sign in with Apple (Coming Soon)
+                <span className="text-lg">🍎</span>
+                Sign in with Apple
               </button>
             </div>
           </div>
@@ -1078,16 +1113,18 @@ const AccountabilityApp: React.FC = () => {
               <button
                 onClick={handleGoogleSignIn}
                 disabled={submitLoading}
-                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+                className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                🔍 Sign up with Google
+                <span className="text-lg">🔍</span>
+                Sign up with Google
               </button>
               <button
-                disabled={true}
-                className="w-full px-6 py-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                title="Apple Sign-in coming soon"
+                onClick={handleAppleSignIn}
+                disabled={submitLoading}
+                className="w-full px-6 py-3 border border-gray-800 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-black dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                🍎 Sign up with Apple (Coming Soon)
+                <span className="text-lg">🍎</span>
+                Sign up with Apple
               </button>
             </div>
           </div>
