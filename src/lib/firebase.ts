@@ -12,8 +12,26 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Debug Firebase configuration
+console.log('🔥 Firebase Config Debug:', {
+  apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'MISSING',
+  authDomain: firebaseConfig.authDomain || 'MISSING',
+  projectId: firebaseConfig.projectId || 'MISSING',
+  storageBucket: firebaseConfig.storageBucket || 'MISSING',
+  messagingSenderId: firebaseConfig.messagingSenderId || 'MISSING',
+  appId: firebaseConfig.appId ? `${firebaseConfig.appId.substring(0, 10)}...` : 'MISSING'
+});
+
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
+console.log('🔥 Firebase App Initialized:', {
+  name: app.name,
+  options: {
+    projectId: app.options.projectId,
+    authDomain: app.options.authDomain
+  }
+});
 
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);

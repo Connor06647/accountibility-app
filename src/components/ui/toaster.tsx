@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { CheckCircle, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 interface ToastProps {
   id: string;
@@ -52,39 +53,90 @@ export const ToasterProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 };
 
+const getToastStyles = (type: string) => {
+  switch (type) {
+    case 'success':
+      return {
+        bg: 'bg-white dark:bg-gray-800',
+        border: 'border-l-4 border-l-green-500',
+        icon: CheckCircle,
+        iconColor: 'text-green-500',
+        iconBg: 'bg-green-50 dark:bg-green-900/20'
+      };
+    case 'error':
+      return {
+        bg: 'bg-white dark:bg-gray-800',
+        border: 'border-l-4 border-l-red-500',
+        icon: AlertCircle,
+        iconColor: 'text-red-500',
+        iconBg: 'bg-red-50 dark:bg-red-900/20'
+      };
+    case 'warning':
+      return {
+        bg: 'bg-white dark:bg-gray-800',
+        border: 'border-l-4 border-l-yellow-500',
+        icon: AlertTriangle,
+        iconColor: 'text-yellow-500',
+        iconBg: 'bg-yellow-50 dark:bg-yellow-900/20'
+      };
+    default:
+      return {
+        bg: 'bg-white dark:bg-gray-800',
+        border: 'border-l-4 border-l-blue-500',
+        icon: Info,
+        iconColor: 'text-blue-500',
+        iconBg: 'bg-blue-50 dark:bg-blue-900/20'
+      };
+  }
+};
+
 export const Toaster: React.FC = () => {
   const { toasts, removeToast } = useToaster();
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className={`p-4 rounded-lg shadow-lg max-w-sm animate-slide-up ${
-            toast.type === 'error' ? 'bg-red-500 text-white' :
-            toast.type === 'success' ? 'bg-green-500 text-white' :
-            toast.type === 'warning' ? 'bg-yellow-500 text-white' :
-            'bg-blue-500 text-white'
-          }`}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              {toast.title && (
-                <div className="font-medium mb-1">{toast.title}</div>
-              )}
-              {toast.description && (
-                <div className="text-sm opacity-90">{toast.description}</div>
-              )}
+    <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm">
+      {toasts.map((toast) => {
+        const styles = getToastStyles(toast.type || 'info');
+        const IconComponent = styles.icon;
+        
+        return (
+          <div
+            key={toast.id}
+            className={`
+              ${styles.bg} ${styles.border}
+              rounded-lg shadow-xl border border-gray-200 dark:border-gray-700
+              p-4 animate-slide-up backdrop-blur-sm
+              hover:shadow-2xl transition-all duration-200
+            `}
+          >
+            <div className="flex items-start space-x-3">
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full ${styles.iconBg} flex items-center justify-center`}>
+                <IconComponent className={`w-4 h-4 ${styles.iconColor}`} />
+              </div>
+              
+              <div className="flex-1 min-w-0">
+                {toast.title && (
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+                    {toast.title}
+                  </p>
+                )}
+                {toast.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                    {toast.description}
+                  </p>
+                )}
+              </div>
+              
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors duration-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => removeToast(toast.id)}
-              className="ml-4 text-white hover:opacity-80"
-            >
-              ×
-            </button>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

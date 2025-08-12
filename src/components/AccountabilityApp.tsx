@@ -2,31 +2,163 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context-real';
-import { UpgradePrompt, TierBadge, FeatureLimit } from '@/components/ui/upgrade-prompt-no-styles';
+import { UpgradePrompt, TierBadge } from '@/components/ui/upgrade-prompt-no-styles';
 import { ThemeDialog } from '@/components/ui/theme-dialog';
-import { LoadingSpinner, LoadingButton } from '@/components/ui/loading';
+import { LoadingSpinner } from '@/components/ui/loading';
 import { useToaster } from '@/components/ui/toaster';
 import OnboardingFlow from '@/components/OnboardingFlow';
 import SEO from '@/components/SEO';
-import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, updateDoc, deleteDoc, addDoc, Timestamp } from 'firebase/firestore';
+import EmptyState from '@/components/ui/empty-state';
+import { FormField, EnhancedButton } from '@/components/ui/enhanced-form';
+import { DashboardHeader } from '@/components/ui/dashboard-header';
+import { WebsiteOnboardingPrompt } from '@/components/ui/website-onboarding-prompt';
+import { AppTour } from '@/components/AppTour';
+import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { usePlatformDetection } from '@/lib/platform-detection';
+import { shouldShowOnboarding, completeAppOnboarding, markWebsitePromptSeen } from '@/lib/onboarding-manager';
+
+// Import Lucide React icons
+import { 
+  Target, 
+  Calendar,
+  Settings,
+  BarChart3,
+  Users,
+  Crown,
+  Plus,
+  LogOut,
+  Moon,
+  Sun,
+  CheckCircle2,
+  TrendingUp,
+  Activity,
+  Zap,
+  Star,
+  Trash2,
+  Save,
+  Eye,
+  Lock,
+  AlertCircle,
+  Menu,
+  X
+} from 'lucide-react';
 
 const AccountabilityApp: React.FC = () => {
-  const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signInWithApple, signOut, clearError } = useAuth();
+  const { user, loading, error, isAdmin, userTier, canAccessFeature, getFeatureLimit, signIn, signUp, signInWithGoogle, signOut, clearError, clearSession, getSessionAge } = useAuth();
   const { addToast } = useToaster();
-  const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('onboarding');
-  const [currentPage, setCurrentPage] = useState('dashboard');
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    // Show onboarding only if user has never created an account
+  
+  // Debug helper - expose admin test info globally for mobile testing
+  useEffect(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('hasCreatedAccount') !== 'true';
+      (window as any).debugAuth = {
+        adminEmail: process.env.NEXT_PUBLIC_ADMIN_EMAIL,
+        currentUserEmail: user?.email,
+        firebaseUserEmail: user?.email,
+        isAdmin,
+        userProfile: user,
+        testAdminLogin: () => {
+          console.log('🔐 Admin Test Info:', {
+            expectedAdminEmail: process.env.NEXT_PUBLIC_ADMIN_EMAIL,
+            currentUserEmail: user?.email,
+            isAdmin,
+            userTier: userTier,
+            userProfile: user
+          });
+          addToast({
+            type: 'info',
+            title: 'Admin Debug Info',
+            description: `Admin: ${process.env.NEXT_PUBLIC_ADMIN_EMAIL} | User: ${user?.email} | Is Admin: ${isAdmin}`
+          });
+        },
+        forceRefreshAuth: () => {
+          console.log('🔐 Force refreshing auth state...');
+          window.location.reload();
+        },
+        checkEnvVars: () => {
+          console.log('🔐 Environment Variables:', {
+            adminEmail: process.env.NEXT_PUBLIC_ADMIN_EMAIL,
+            hasFirebaseConfig: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+            nodeEnv: process.env.NODE_ENV
+          });
+        },
+        testFirebase: async () => {
+          const { testFirebaseConnection } = await import('@/lib/admin-setup');
+          const result = await testFirebaseConnection();
+          console.log('🔥 Firebase test result:', result);
+          addToast({
+            type: result.success ? 'success' : 'error',
+            title: 'Firebase Test',
+            description: result.message || result.error
+          });
+        },
+        testAdminDirectLogin: async () => {
+          const { testAdminLogin } = await import('@/lib/admin-setup');
+          const result = await testAdminLogin();
+          console.log('🔐 Admin login test result:', result);
+          addToast({
+            type: result.success ? 'success' : 'error',
+            title: 'Admin Login Test',
+            description: result.message || result.error
+          });
+        },
+        ensureAdminExists: async () => {
+          const { ensureAdminExists } = await import('@/lib/admin-setup');
+          const result = await ensureAdminExists();
+          console.log('🔐 Ensure admin result:', result);
+          addToast({
+            type: result.success ? 'success' : 'error',
+            title: result.success ? 'Admin Setup' : 'Admin Setup Failed',
+            description: result.message || result.error
+          });
+        },
+        resetAdminPassword: async () => {
+          const { resetAdminPassword } = await import('@/lib/admin-setup');
+          const result = await resetAdminPassword();
+          console.log('🔐 Reset password result:', result);
+          addToast({
+            type: result.success ? 'success' : 'error',
+            title: 'Password Reset',
+            description: result.message || result.error
+          });
+        },
+        testWithPassword: async (password: string) => {
+          const { testAdminLoginWithPassword } = await import('@/lib/admin-setup');
+          const result = await testAdminLoginWithPassword(password);
+          console.log('🔐 Test with password result:', result);
+          addToast({
+            type: result.success ? 'success' : 'error',
+            title: 'Password Test',
+            description: result.message || result.error
+          });
+        },
+        debugAdmin: async () => {
+          const { debugAdminAccount } = await import('@/lib/admin-setup');
+          await debugAdminAccount();
+        }
+      };
     }
-    return true;
-  });
+  }, [user, isAdmin, userTier, addToast]);
+
+  // Platform detection
+  const platformInfo = usePlatformDetection();
+
+  const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('welcome');
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [showWebsitePrompt, setShowWebsitePrompt] = useState(false);
+  const [showTour, setShowTour] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({ name: '', username: '', email: '', password: '' });
   const [submitLoading, setSubmitLoading] = useState(false);
   const [themeDialogOpen, setThemeDialogOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // PWA Install state
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showPWAInstall, setShowPWAInstall] = useState(false);
+  const [isPWAInstalled, setIsPWAInstalled] = useState(false);
+  const [isRunningAsPWA, setIsRunningAsPWA] = useState(false);
 
   // Admin-only testing features: Toast notifications and error boundary testing
   // Regular users see clean interface without development/testing UI elements
@@ -65,7 +197,6 @@ const AccountabilityApp: React.FC = () => {
     usersByTier: { free: 0, standard: 0, premium: 0 },
     lastUpdated: new Date()
   });
-  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [adminLoading, setAdminLoading] = useState(false);
 
   // Clear user data when logging out - defined early to avoid hoisting issues
@@ -80,42 +211,302 @@ const AccountabilityApp: React.FC = () => {
     // Clear login forms for security
     setLoginForm({ email: '', password: '' });
     setSignupForm({ name: '', username: '', email: '', password: '' });
-    console.log('User data cleared');
+    // Reset onboarding state completely
+    setShowWebsitePrompt(false);
+    setShowTour(false);
+    setOnboardingChecked(false);
+    // Reset screen to welcome (not dashboard)
+    setCurrentScreen('welcome');
+    setCurrentPage('dashboard');
+    console.log('User data cleared - reset to welcome screen');
   };
 
   useEffect(() => {
     if (user) {
-      // User is logged in - go to dashboard and mark that they have an account
-      localStorage.setItem('hasCreatedAccount', 'true');
-      setShowOnboarding(false);
+      // User is logged in - always start on dashboard
       setCurrentScreen('dashboard');
-    } else if (!showOnboarding) {
-      // User has created account before but not currently logged in - show welcome/login
-      setCurrentScreen('welcome');
+      setCurrentPage('dashboard');
+      // Clear any lingering errors when successfully logged in
+      clearError();
     } else {
-      // New user who has never created an account - show onboarding
-      setCurrentScreen('onboarding');
+      // User not logged in - always go to welcome screen
+      // NEVER show onboarding without a user
+      setCurrentScreen('welcome');
+      setCurrentPage('dashboard'); // Set default page for when they do log in
+      setShowWebsitePrompt(false); // Ensure website prompt is hidden
+      setOnboardingChecked(false); // Reset onboarding check
     }
-  }, [user, showOnboarding]);
+  }, [user]);
+
+  // Platform-specific onboarding logic - ONLY for logged-in users
+  useEffect(() => {
+    const checkOnboardingRequirements = async () => {
+      // Only check onboarding for authenticated users
+      if (!user || !user.id) {
+        console.log('📱 Skipping onboarding check - no authenticated user');
+        return;
+      }
+
+      // Only run once per user login session
+      if (onboardingChecked) {
+        console.log('📱 Skipping onboarding check - already checked for this session');
+        return;
+      }
+
+      try {
+        const onboardingStatus = await shouldShowOnboarding(user.id);
+        
+        console.log('📱 Onboarding status:', {
+          showWebsitePrompt: onboardingStatus.showWebsitePrompt,
+          platform: onboardingStatus.platform,
+          userId: user.id,
+          userEmail: user.email
+        });
+
+        // All users get the same experience - just the website prompt
+        if (onboardingStatus.showWebsitePrompt) {
+          // Show tour prompt AFTER dashboard loads (all users)
+          console.log('📱 Scheduling tour prompt in 500ms...');
+          setTimeout(() => {
+            console.log('📱 Showing tour prompt');
+            setShowWebsitePrompt(true);
+          }, 500); // Half second delay for smoother UX
+        }
+
+        setOnboardingChecked(true);
+      } catch (error) {
+        console.error('Error checking onboarding requirements:', error);
+        setOnboardingChecked(true);
+      }
+    };
+
+    checkOnboardingRequirements();
+  }, [user, platformInfo, onboardingChecked]);
+
+  // PWA Install prompt handler
+  useEffect(() => {
+    // Check if running as PWA
+    const checkPWAMode = () => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const isInWebAppiOS = (window.navigator as any).standalone === true;
+      const isPWAMode = isStandalone || isInWebAppiOS;
+      
+      setIsRunningAsPWA(isPWAMode);
+      
+      if (isPWAMode) {
+        console.log('🎉 Running as installed PWA');
+      } else {
+        console.log('🌐 Running in browser mode');
+      }
+      
+      return isPWAMode;
+    };
+
+    // Check per-user install state
+    const checkUserInstallState = () => {
+      if (!user?.id) return false;
+      
+      const userInstallKey = `pwa-installed-${user.id}`;
+      const userAttemptKey = `pwa-attempt-${user.id}`;
+      
+      const isInstalled = localStorage.getItem(userInstallKey) === 'true';
+      const hasAttempted = localStorage.getItem(userAttemptKey) === 'true';
+      
+      setIsPWAInstalled(isInstalled);
+      
+      return { isInstalled, hasAttempted };
+    };
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      console.log('✅ PWA install prompt available');
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowPWAInstall(true);
+      
+      // Only show toast if user hasn't been informed yet
+      if (user?.id) {
+        const userState = checkUserInstallState();
+        if (typeof userState !== 'boolean' && !userState.hasAttempted) {
+          addToast({
+            description: 'You can now install the app for a better experience!',
+            type: 'success',
+            duration: 5000
+          });
+        }
+      }
+    };
+
+    const handleAppInstalled = () => {
+      console.log('✅ PWA installed successfully');
+      setDeferredPrompt(null);
+      setIsPWAInstalled(true);
+      
+      // Save install state for this user
+      if (user?.id) {
+        const userInstallKey = `pwa-installed-${user.id}`;
+        const userAttemptKey = `pwa-attempt-${user.id}`;
+        localStorage.setItem(userInstallKey, 'true');
+        localStorage.setItem(userAttemptKey, 'true');
+      }
+      
+      addToast({
+        description: 'App installed successfully! You can now access it from your apps.',
+        type: 'success'
+      });
+    };
+
+    // Initialize PWA state
+    checkPWAMode();
+    if (user?.id) {
+      checkUserInstallState();
+    }
+    setShowPWAInstall(true); // Always show install button for better UX
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, [addToast, user?.id]);
+
+  // Clear errors when switching screens
+  useEffect(() => {
+    clearError();
+  }, [currentScreen]);
 
   // Onboarding handlers
-  const handleOnboardingComplete = () => {
-    // User has seen onboarding but hasn't created account yet - go to signup
-    setShowOnboarding(false);
+  const handleOnboardingComplete = async () => {
     if (user) {
-      setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
+      // Mark app onboarding as completed for logged-in users
+      await completeAppOnboarding(user.id);
+      setCurrentScreen('dashboard');
     } else {
-      setCurrentScreen('signup'); // Go directly to signup after onboarding
+      // User completed onboarding but not logged in - go to signup
+      setCurrentScreen('signup');
     }
   };
 
-  const handleOnboardingSkip = () => {
-    // User skipped onboarding but hasn't created account yet - go to welcome
-    setShowOnboarding(false);
+  const handleOnboardingSkip = async () => {
     if (user) {
-      setCurrentScreen('dashboard'); // If already logged in, go back to dashboard
+      // Even if skipped, mark as completed so it doesn't show again
+      await completeAppOnboarding(user.id);
+      setCurrentScreen('dashboard');
     } else {
       setCurrentScreen('welcome');
+    }
+  };
+
+  // Website onboarding prompt handlers
+  const handleWebsitePromptStartTour = async () => {
+    setShowWebsitePrompt(false);
+    if (user) {
+      await markWebsitePromptSeen(user.id);
+    }
+    // Start the interactive tour instead of old onboarding
+    setShowTour(true);
+  };
+
+  const handleWebsitePromptSkipTour = async () => {
+    setShowWebsitePrompt(false);
+    if (user) {
+      await markWebsitePromptSeen(user.id);
+    }
+  };
+
+  const handleWebsitePromptClose = async () => {
+    setShowWebsitePrompt(false);
+    if (user) {
+      await markWebsitePromptSeen(user.id);
+    }
+  };
+
+  // Tour handlers
+  const handleTourComplete = () => {
+    setShowTour(false);
+    // Tour completed successfully
+    console.log('🎯 App tour completed!');
+  };
+
+  const handleTourClose = () => {
+    setShowTour(false);
+    console.log('🎯 App tour closed');
+  };
+
+  // Manual tour start (from settings)
+  const startTour = () => {
+    setShowTour(true);
+  };
+
+  // PWA Install handler
+  const handleInstallPWA = async () => {
+    if (!user?.id) {
+      addToast({
+        description: 'Please log in to install the app',
+        type: 'error'
+      });
+      return;
+    }
+
+    // Check if already running as PWA
+    if (isRunningAsPWA) {
+      return; // No action needed - they're already using the app
+    }
+
+    // Check if user has already installed (per-user tracking)
+    if (isPWAInstalled) {
+      return; // No toast needed - button already shows "App Installed ✓"
+    }
+
+    // Mark that user has attempted install (for better UX on subsequent visits)
+    const userAttemptKey = `pwa-attempt-${user.id}`;
+    localStorage.setItem(userAttemptKey, 'true');
+    if (deferredPrompt) {
+      try {
+        addToast({
+          description: 'Opening install dialog...',
+          type: 'info',
+          duration: 2000
+        });
+        const result = await deferredPrompt.prompt();
+        console.log('PWA install result:', result);
+        
+        setDeferredPrompt(null);
+        
+        if (result.outcome === 'accepted') {
+          // Save install state for this user
+          const userInstallKey = `pwa-installed-${user.id}`;
+          localStorage.setItem(userInstallKey, 'true');
+          setIsPWAInstalled(true);
+          
+          addToast({
+            description: '🎉 App installation started! Look for it in your apps shortly.',
+            type: 'success',
+            duration: 6000
+          });
+        } else if (result.outcome === 'dismissed') {
+          addToast({
+            description: 'Installation cancelled. You can install later using your browser menu.',
+            type: 'info',
+            duration: 4000
+          });
+        }
+      } catch (error) {
+        console.error('PWA install error:', error);
+        addToast({
+          description: 'Installation dialog failed. Try using your browser menu: ⋮ → "Install app"',
+          type: 'error',
+          duration: 6000
+        });
+      }
+    } else {
+      // No prompt available - provide helpful instructions
+      addToast({
+        description: '🔧 To install: Look for an install icon (⊕) in your address bar, or use your browser menu: ⋮ → "Install Accountability on Autopilot"',
+        type: 'info',
+        duration: 8000
+      });
     }
   };
 
@@ -149,6 +540,13 @@ const AccountabilityApp: React.FC = () => {
         // Only count users who have actually engaged with the app
         const engagedUsers = users.filter((user: any) => user.hasEngaged === true);
         
+        // Sort engaged users by creation date (most recent first)
+        const sortedEngagedUsers = engagedUsers.sort((a: any, b: any) => {
+          const aDate = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+          const bDate = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+          return new Date(bDate).getTime() - new Date(aDate).getTime();
+        });
+        
         const activeToday = engagedUsers.filter((user: any) => {
           const lastSeen = user.lastSeen?.toDate?.() || user.lastActive?.toDate?.();
           const todayStart = new Date();
@@ -158,7 +556,7 @@ const AccountabilityApp: React.FC = () => {
         
         updateAdminData({ 
           totalUsers: engagedUsers.length, // Only count engaged users
-          recentUsers: users.slice(0, 10), // Still show all recent users for admin visibility
+          recentUsers: sortedEngagedUsers.slice(0, 10), // Show recent engaged users for consistency
           usersByTier: countUsersByTier(engagedUsers), // Only count engaged users by tier
           activeUsers: activeToday,
           lastUpdated: new Date()
@@ -232,6 +630,228 @@ const AccountabilityApp: React.FC = () => {
     }
   }, [user]);
 
+  // Dashboard statistics calculations
+  const calculateWeeklyChange = (currentWeekData: any[], previousWeekData: any[]) => {
+    const currentCount = currentWeekData.length;
+    const previousCount = previousWeekData.length;
+    
+    console.log('🔢 Calculating change:', {
+      currentCount,
+      previousCount
+    });
+    
+    // No previous data to compare against
+    if (previousCount === 0) {
+      if (currentCount === 0) {
+        return undefined; // No change to show
+      }
+      return { value: 100, type: 'increase' as const }; // New data is 100% increase
+    }
+    
+    // Calculate percentage change
+    const percentChange = Math.round(((currentCount - previousCount) / previousCount) * 100);
+    
+    console.log('📈 Percent change calculated:', percentChange);
+    
+    if (percentChange === 0) {
+      return { value: 0, type: 'neutral' as const };
+    }
+    
+    return {
+      value: Math.abs(percentChange),
+      type: percentChange > 0 ? 'increase' as const : 'decrease' as const
+    };
+  };
+
+  const getWeeklyStats = () => {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    // Debug logging (reduced for production)
+    // console.log('📊 Weekly Stats Debug:', {
+    //   now: now.toISOString(),
+    //   oneWeekAgo: oneWeekAgo.toISOString(),
+    //   twoWeeksAgo: twoWeeksAgo.toISOString(),
+    //   totalGoals: goals.length,
+    //   totalCheckIns: checkIns.length
+    // });
+
+    // Goals created this week vs last week
+    const currentWeekGoals = goals.filter(goal => {
+      if (!goal.createdAt) {
+        console.log('⚠️ Goal missing createdAt:', goal.title);
+        return false;
+      }
+      const createdAt = goal.createdAt?.toDate ? goal.createdAt.toDate() : new Date(goal.createdAt);
+      return createdAt >= oneWeekAgo;
+    });
+    
+    const previousWeekGoals = goals.filter(goal => {
+      if (!goal.createdAt) return false;
+      const createdAt = goal.createdAt?.toDate ? goal.createdAt.toDate() : new Date(goal.createdAt);
+      return createdAt >= twoWeeksAgo && createdAt < oneWeekAgo;
+    });
+
+    // Check-ins this week vs last week
+    const currentWeekCheckIns = checkIns.filter(checkIn => {
+      const checkInDate = new Date(checkIn.date);
+      return checkInDate >= oneWeekAgo;
+    });
+    
+    const previousWeekCheckIns = checkIns.filter(checkIn => {
+      const checkInDate = new Date(checkIn.date);
+      return checkInDate >= twoWeeksAgo && checkInDate < oneWeekAgo;
+    });
+
+    console.log('📊 Weekly Comparison:', {
+      currentWeekGoals: currentWeekGoals.length,
+      previousWeekGoals: previousWeekGoals.length,
+      currentWeekCheckIns: currentWeekCheckIns.length,
+      previousWeekCheckIns: previousWeekCheckIns.length
+    });
+
+    // Calculate current streak
+    const sortedCheckIns = [...checkIns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    let currentStreak = 0;
+    
+    if (sortedCheckIns.length > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      const latestCheckIn = sortedCheckIns[0];
+      
+      // Check if latest check-in is today or yesterday (consecutive days)
+      if (latestCheckIn.date === today) {
+        currentStreak = 1;
+        
+        // Count consecutive days backwards
+        for (let i = 1; i < sortedCheckIns.length; i++) {
+          const currentDate = new Date(sortedCheckIns[i].date);
+          const expectedDate = new Date();
+          expectedDate.setDate(expectedDate.getDate() - i);
+          
+          if (currentDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
+            currentStreak++;
+          } else {
+            break;
+          }
+        }
+      } else {
+        // Check if latest check-in was yesterday
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (latestCheckIn.date === yesterday.toISOString().split('T')[0]) {
+          currentStreak = 1;
+          
+          // Count consecutive days backwards from yesterday
+          for (let i = 1; i < sortedCheckIns.length; i++) {
+            const currentDate = new Date(sortedCheckIns[i].date);
+            const expectedDate = new Date();
+            expectedDate.setDate(expectedDate.getDate() - (i + 1));
+            
+            if (currentDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
+              currentStreak++;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    const goalsChange = calculateWeeklyChange(currentWeekGoals, previousWeekGoals);
+    const checkInsChange = calculateWeeklyChange(currentWeekCheckIns, previousWeekCheckIns);
+
+    // Debug logging (reduced for production)
+    // console.log('📊 Final Stats:', {
+    //   goalsChange,
+    //   checkInsChange,
+    //   currentStreak
+    // });
+
+    return {
+      goalsChange,
+      checkInsChange,
+      currentStreak
+    };
+  };
+
+  // Test data generator for statistics (admin only)
+  const generateTestData = async () => {
+    if (!isAdmin) {
+      addToast({
+        type: 'error',
+        title: 'Access denied',
+        description: 'Only admins can generate test data.'
+      });
+      return;
+    }
+
+    try {
+      const testGoals = [];
+      const testCheckIns = [];
+      
+      // Generate goals from last 2 weeks with varying dates
+      const baseDate = new Date();
+      for (let i = 0; i < 10; i++) {
+        const randomDays = Math.floor(Math.random() * 14); // Last 14 days
+        const goalDate = new Date(baseDate.getTime() - (randomDays * 24 * 60 * 60 * 1000));
+        
+        const goal = {
+          id: `test-goal-${i}`,
+          title: `Test Goal ${i + 1}`,
+          description: `Sample goal for testing statistics`,
+          userId: user?.id,
+          completed: Math.random() > 0.7,
+          createdAt: goalDate,
+          deadline: new Date(goalDate.getTime() + (7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]
+        };
+        
+        testGoals.push(goal);
+        await addDoc(collection(db, 'goals'), goal);
+      }
+
+      // Generate check-ins from last 2 weeks
+      for (let i = 0; i < 12; i++) {
+        const randomDays = Math.floor(Math.random() * 14); // Last 14 days
+        const checkInDate = new Date(baseDate.getTime() - (randomDays * 24 * 60 * 60 * 1000));
+        
+        const checkIn = {
+          id: `test-checkin-${i}`,
+          date: checkInDate.toISOString().split('T')[0],
+          rating: Math.floor(Math.random() * 5) + 1,
+          notes: `Test check-in ${i + 1}`,
+          userId: user?.id,
+          mood: ['great', 'good', 'okay', 'poor'][Math.floor(Math.random() * 4)]
+        };
+        
+        testCheckIns.push(checkIn);
+        await addDoc(collection(db, 'checkins'), checkIn);
+      }
+
+      addToast({
+        type: 'success',
+        title: 'Test data generated!',
+        description: `Created ${testGoals.length} test goals and ${testCheckIns.length} test check-ins with historical dates.`
+      });
+      
+      // Reload user data to see the changes
+      await loadUserData();
+      
+      console.log('✅ Test data generated:', {
+        goals: testGoals.length,
+        checkIns: testCheckIns.length
+      });
+      
+    } catch (error) {
+      console.error('Error generating test data:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to generate test data',
+        description: 'An error occurred while creating sample data.'
+      });
+    }
+  };
+
   // Helper functions for admin data
   const fetchAdminData = async () => {
     setAdminLoading(true);
@@ -254,11 +874,33 @@ const AccountabilityApp: React.FC = () => {
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
+      // Filter for engaged users only for consistency
+      const engagedUsers = users.filter((user: any) => user.hasEngaged === true);
+      
+      // Sort engaged users by creation date (most recent first)
+      const sortedUsers = engagedUsers.sort((a: any, b: any) => {
+        const aDate = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+        const bDate = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+        return new Date(bDate).getTime() - new Date(aDate).getTime();
+      });
+      
       updateAdminData({
-        totalUsers: usersSnapshot.size,
-        recentUsers: users.slice(0, 10),
-        usersByTier: countUsersByTier(users),
-        activeUsers: users.filter((user: any) => {
+        totalUsers: engagedUsers.length, // Only count engaged users
+        recentUsers: sortedUsers.slice(0, 10), // Get 10 most recent engaged users
+        usersByTier: countUsersByTier(engagedUsers), // Only count engaged users by tier
+        activeUsers: engagedUsers.filter((user: any) => {
+          const lastSeen = user.lastSeen?.toDate?.() || user.lastActive?.toDate?.();
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          return lastSeen && lastSeen >= todayStart;
+        }).length
+      });
+      
+      console.log('👥 User Stats Debug:', {
+        totalUsersAll: usersSnapshot.size,
+        totalUsersEngaged: engagedUsers.length,
+        recentUsersCount: sortedUsers.slice(0, 10).length,
+        activeUsersToday: engagedUsers.filter((user: any) => {
           const lastSeen = user.lastSeen?.toDate?.() || user.lastActive?.toDate?.();
           const todayStart = new Date();
           todayStart.setHours(0, 0, 0, 0);
@@ -453,6 +1095,9 @@ const AccountabilityApp: React.FC = () => {
     e.preventDefault();
     setSubmitLoading(true);
     
+    // Clear any previous errors
+    clearError();
+    
     // Validate form data before making Firebase call
     if (!loginForm.email || !loginForm.password) {
       addToast({
@@ -477,35 +1122,47 @@ const AccountabilityApp: React.FC = () => {
     }
     
     try {
+      console.log('🔐 Attempting login with:', loginForm.email);
       const result = await signIn(loginForm.email, loginForm.password);
       
+      console.log('🔐 Login result:', result);
+      
       if (result.success) {
-        // Success - the useEffect will handle navigation when user state updates
+        // Success - clear forms and show success message
+        setLoginForm({ email: '', password: '' });
         addToast({
           type: 'success',
           title: 'Welcome back!',
           description: 'You have successfully signed in to your account.'
         });
-        // Clear the login form for security
-        setLoginForm({ email: '', password: '' });
+        // Navigation will be handled by the useEffect when user state updates
       } else {
-        // Handle specific error cases
+        // Handle Firebase auth errors
         const errorMessage = result.error || 'Sign in failed';
         let title = 'Sign in failed';
         let description = 'Please check your credentials and try again.';
         
-        if (errorMessage.includes('user-not-found') || errorMessage.includes('invalid-credential')) {
+        console.log('🔐 Login failed with error:', errorMessage);
+        
+        // Parse Firebase error codes
+        if (errorMessage.includes('auth/user-not-found') || 
+            errorMessage.includes('auth/invalid-email') ||
+            errorMessage.includes('auth/invalid-credential')) {
           title = 'Account not found';
-          description = 'No account exists with this email. Would you like to create an account instead?';
-        } else if (errorMessage.includes('wrong-password')) {
+          description = 'No account exists with this email. Please check your email or create an account.';
+        } else if (errorMessage.includes('auth/wrong-password') || 
+                   errorMessage.includes('auth/invalid-password')) {
           title = 'Incorrect password';
           description = 'The password you entered is incorrect. Please try again.';
-        } else if (errorMessage.includes('too-many-requests')) {
+        } else if (errorMessage.includes('auth/too-many-requests')) {
           title = 'Too many attempts';
-          description = 'Please wait a few minutes before trying again.';
-        } else if (errorMessage.includes('user-disabled')) {
+          description = 'Too many failed login attempts. Please wait a few minutes before trying again.';
+        } else if (errorMessage.includes('auth/user-disabled')) {
           title = 'Account disabled';
           description = 'This account has been disabled. Please contact support.';
+        } else if (errorMessage.includes('auth/network-request-failed')) {
+          title = 'Connection error';
+          description = 'Unable to connect to the authentication service. Please check your internet connection.';
         }
         
         addToast({
@@ -515,19 +1172,13 @@ const AccountabilityApp: React.FC = () => {
         });
       }
     } catch (error: any) {
-      // Fallback error handling
-      let title = 'Sign in failed';
-      let description = 'Please check your credentials and try again.';
+      console.error('🔐 Login error:', error);
       
-      if (error.message?.includes('user-not-found') || error.message?.includes('invalid-credential')) {
-        title = 'Account not found';
-        description = 'No account exists with this email. Would you like to create an account instead?';
-      }
-      
+      // Fallback error handling for unexpected errors
       addToast({
         type: 'error',
-        title,
-        description
+        title: 'Login failed',
+        description: 'An unexpected error occurred. Please try again.'
       });
     } finally {
       setSubmitLoading(false);
@@ -537,6 +1188,9 @@ const AccountabilityApp: React.FC = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitLoading(true);
+    
+    // Clear any previous errors
+    clearError();
     
     // Validate form data before making Firebase call
     if (!signupForm.name || !signupForm.username || !signupForm.email || !signupForm.password) {
@@ -584,6 +1238,8 @@ const AccountabilityApp: React.FC = () => {
     }
     
     try {
+      console.log('🔐 Attempting signup with:', signupForm.email);
+      
       // Check if username is already taken
       const usernameQuery = query(collection(db, 'users'), where('username', '==', signupForm.username.toLowerCase()));
       const usernameSnapshot = await getDocs(usernameQuery);
@@ -598,20 +1254,39 @@ const AccountabilityApp: React.FC = () => {
         return;
       }
       
-      await signUp(signupForm.email, signupForm.password, signupForm.name, signupForm.username);
-      // Success - the useEffect will handle navigation when user state updates
+      const result = await signUp(signupForm.email, signupForm.password, signupForm.name, signupForm.username);
+      
+      console.log('🔐 Signup result:', result);
+      
+      // Success - clear forms and show success message
+      setSignupForm({ name: '', username: '', email: '', password: '' });
       addToast({
         type: 'success',
         title: 'Account created!',
         description: 'Welcome to Accountability On Autopilot! Your journey starts now.'
       });
-      // Clear the signup form for security
-      setSignupForm({ name: '', username: '', email: '', password: '' });
+      // Navigation will be handled by the useEffect when user state updates
     } catch (error: any) {
+      console.error('🔐 Signup error:', error);
+      
+      let title = 'Account creation failed';
+      let description = 'Please try again or use a different email address.';
+      
+      if (error.message?.includes('auth/email-already-in-use')) {
+        title = 'Email already in use';
+        description = 'An account with this email already exists. Please sign in instead.';
+      } else if (error.message?.includes('auth/weak-password')) {
+        title = 'Password too weak';
+        description = 'Please choose a stronger password with at least 6 characters.';
+      } else if (error.message?.includes('auth/network-request-failed')) {
+        title = 'Connection error';
+        description = 'Unable to connect to the authentication service. Please check your internet connection.';
+      }
+      
       addToast({
         type: 'error',
-        title: 'Account creation failed',
-        description: error.message || 'Please try again or use a different email address.'
+        title,
+        description: error.message || description
       });
     } finally {
       setSubmitLoading(false);
@@ -621,13 +1296,19 @@ const AccountabilityApp: React.FC = () => {
   const handleGoogleSignIn = async () => {
     setSubmitLoading(true);
     
+    // Clear any previous errors
+    clearError();
+    
     try {
+      console.log('🔐 Attempting Google sign-in...');
       const result = await signInWithGoogle();
+      
+      console.log('🔐 Google sign-in result:', result);
+      
       if (result.success) {
         // Mark that user has created/used an account (for first time Google users)
         localStorage.setItem('hasCreatedAccount', 'true');
-        setShowOnboarding(false);
-        // Success - the useEffect will handle navigation when user state updates
+        
         addToast({
           type: 'success',
           title: 'Welcome!',
@@ -637,39 +1318,29 @@ const AccountabilityApp: React.FC = () => {
         throw new Error(result.error || 'Google sign-in failed');
       }
     } catch (error: any) {
-      addToast({
-        type: 'error',
-        title: 'Google sign-in failed',
-        description: error.message || 'Please try again or use email/password sign-in.'
-      });
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
-
-  const handleAppleSignIn = async () => {
-    setSubmitLoading(true);
-    
-    try {
-      const result = await signInWithApple();
-      if (result.success) {
-        // Mark that user has created/used an account (for first time Apple users)
-        localStorage.setItem('hasCreatedAccount', 'true');
-        setShowOnboarding(false);
-        // Success - the useEffect will handle navigation when user state updates
-        addToast({
-          type: 'success',
-          title: 'Welcome!',
-          description: 'Successfully signed in with Apple.'
-        });
-      } else {
-        throw new Error(result.error || 'Apple sign-in failed');
+      console.error('🔐 Google sign-in error:', error);
+      
+      let title = 'Google sign-in failed';
+      let description = 'Please try again or use email/password sign-in.';
+      
+      if (error.message?.includes('popup-closed-by-user')) {
+        title = 'Sign-in cancelled';
+        description = 'You cancelled the Google sign-in process.';
+      } else if (error.message?.includes('network-request-failed')) {
+        title = 'Connection error';
+        description = 'Unable to connect to Google. Please check your internet connection.';
+      } else if (error.message?.includes('auth/unauthorized-domain') || window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+        title = 'Google Sign-In Not Available';
+        description = 'Google sign-in is not available when accessing via IP address. Please use email/password login for mobile testing or access via localhost on desktop.';
+      } else if (error.message?.includes('auth/popup-blocked')) {
+        title = 'Popup blocked';
+        description = 'Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.';
       }
-    } catch (error: any) {
+      
       addToast({
         type: 'error',
-        title: 'Apple sign-in failed',
-        description: error.message || 'Please try again or use email/password sign-in.'
+        title,
+        description
       });
     } finally {
       setSubmitLoading(false);
@@ -906,10 +1577,47 @@ const AccountabilityApp: React.FC = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center max-w-sm mx-4">
+          {/* Brand Logo Container */}
+          <div className="relative mb-8">
+            <div className="w-24 h-24 bg-white dark:bg-gray-800 rounded-3xl shadow-2xl flex items-center justify-center mx-auto relative overflow-hidden">
+              {/* Animated background gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-600 opacity-10 animate-pulse"></div>
+              <div className="relative z-10">
+                <LoadingSpinner size="lg" className="text-blue-600" />
+              </div>
+            </div>
+            {/* Pulse ring animation */}
+            <div className="absolute inset-0 w-24 h-24 mx-auto rounded-full border-2 border-blue-500/20 animate-ping"></div>
+          </div>
+          
+          {/* Brand Text */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">
+              Accountability On Autopilot
+            </h1>
+            <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+              AI-Powered Discipline Coach
+            </p>
+          </div>
+          
+          {/* Loading Message */}
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+              Setting up your dashboard
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Preparing your personalized experience...
+            </p>
+          </div>
+          
+          {/* Progress indicator */}
+          <div className="mt-6">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-1 rounded-full animate-pulse" style={{width: '60%'}}></div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -949,43 +1657,74 @@ const AccountabilityApp: React.FC = () => {
       {/* ThemeToggle removed, theme selection now in sidebar dialog */}
       <div className="max-w-md w-full mx-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 text-center">Sign In</h2>
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Welcome Back</h2>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">Sign in to continue your accountability journey</p>
+          </div>
+          
+          {/* Mobile testing notification */}
+          {window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/) && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-4">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-4 w-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-2">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                    <strong>Mobile Testing Mode:</strong> Google Sign-In is disabled when accessing via IP address. Use email/password login for testing on mobile.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4 flex items-center">
+              <AlertCircle size={16} className="text-red-500 mr-2 flex-shrink-0" />
               <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-              <input
-                type="email"
-                value={loginForm.email}
-                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                required
-              />
-            </div>
-            <button
+          <form onSubmit={handleLogin} className="space-y-6">
+            <FormField
+              label="Email Address"
+              type="email"
+              value={loginForm.email}
+              onChange={(value) => setLoginForm({ ...loginForm, email: value })}
+              placeholder="Enter your email"
+              required
+              validation={{
+                pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+              }}
+            />
+            
+            <FormField
+              label="Password"
+              type="password"
+              value={loginForm.password}
+              onChange={(value) => setLoginForm({ ...loginForm, password: value })}
+              placeholder="Enter your password"
+              required
+              validation={{
+                minLength: 6
+              }}
+            />
+            
+            <EnhancedButton
               type="submit"
+              loading={submitLoading}
               disabled={submitLoading}
-              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none flex items-center justify-center gap-2"
+              variant="primary"
+              fullWidth
+              icon={<Lock size={18} />}
             >
-              {submitLoading && <LoadingSpinner size="sm" color="white" />}
               {submitLoading ? 'Signing In...' : 'Sign In'}
-            </button>
+            </EnhancedButton>
           </form>
 
           <div className="mt-6">
@@ -1003,16 +1742,13 @@ const AccountabilityApp: React.FC = () => {
                 disabled={submitLoading}
                 className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                <span className="text-lg">🔍</span>
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
                 Sign in with Google
-              </button>
-              <button
-                onClick={handleAppleSignIn}
-                disabled={submitLoading}
-                className="w-full px-6 py-3 border border-gray-800 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-black dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
-              >
-                <span className="text-lg">🍎</span>
-                Sign in with Apple
               </button>
             </div>
           </div>
@@ -1034,70 +1770,116 @@ const AccountabilityApp: React.FC = () => {
   // Signup Screen
   const renderSignupScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-      {/* ThemeToggle removed, theme selection now in sidebar dialog */}
       <div className="max-w-md w-full mx-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 text-center">Create Account</h2>
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Star className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Get Started</h2>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">Create your account to begin your accountability journey</p>
+          </div>
+          
+          {/* Mobile testing notification */}
+          {window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/) && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-4">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-4 w-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-2">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                    <strong>Mobile Testing Mode:</strong> Google Sign-In is disabled when accessing via IP address. Use email/password registration for testing on mobile.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4 flex items-center">
+              <AlertCircle size={16} className="text-red-500 mr-2 flex-shrink-0" />
               <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
             </div>
           )}
 
-          <form onSubmit={handleSignup} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-              <input
-                type="text"
-                value={signupForm.name}
-                onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
-              <input
-                type="text"
-                value={signupForm.username}
-                onChange={(e) => setSignupForm({ ...signupForm, username: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                placeholder="Choose a unique username"
-                required
-                minLength={3}
-                maxLength={20}
-                pattern="[a-zA-Z0-9_]+"
-                title="Username can only contain letters, numbers, and underscores"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-              <input
-                type="email"
-                value={signupForm.email}
-                onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-              <input
-                type="password"
-                value={signupForm.password}
-                onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white bg-white dark:bg-gray-700 transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                required
-              />
-            </div>
-            <button
+          <form onSubmit={handleSignup} className="space-y-6">
+            <FormField
+              label="Full Name"
+              type="text"
+              value={signupForm.name}
+              onChange={(value) => setSignupForm({ ...signupForm, name: value })}
+              placeholder="Enter your full name"
+              required
+              validation={{
+                minLength: 2,
+                maxLength: 50
+              }}
+            />
+            
+            <FormField
+              label="Username"
+              type="text"
+              value={signupForm.username}
+              onChange={(value) => setSignupForm({ ...signupForm, username: value })}
+              placeholder="Choose a unique username"
+              required
+              validation={{
+                minLength: 3,
+                maxLength: 20,
+                pattern: /^[a-zA-Z0-9_]+$/,
+                customValidator: (value) => {
+                  if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+                    return 'Username can only contain letters, numbers, and underscores';
+                  }
+                  return null;
+                }
+              }}
+            />
+            
+            <FormField
+              label="Email Address"
+              type="email"
+              value={signupForm.email}
+              onChange={(value) => setSignupForm({ ...signupForm, email: value })}
+              placeholder="Enter your email"
+              required
+              validation={{
+                pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+              }}
+            />
+            
+            <FormField
+              label="Password"
+              type="password"
+              value={signupForm.password}
+              onChange={(value) => setSignupForm({ ...signupForm, password: value })}
+              placeholder="Create a strong password"
+              required
+              validation={{
+                minLength: 6,
+                customValidator: (value) => {
+                  if (value.length < 6) return 'Password must be at least 6 characters';
+                  if (!/(?=.*[a-z])/.test(value)) return 'Password must contain at least one lowercase letter';
+                  if (!/(?=.*[A-Z])/.test(value)) return 'Password must contain at least one uppercase letter';
+                  if (!/(?=.*\d)/.test(value)) return 'Password must contain at least one number';
+                  return null;
+                }
+              }}
+            />
+            
+            <EnhancedButton
               type="submit"
+              loading={submitLoading}
               disabled={submitLoading}
-              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none"
+              variant="primary"
+              fullWidth
+              icon={<Star size={18} />}
             >
               {submitLoading ? 'Creating Account...' : 'Create Account'}
-            </button>
+            </EnhancedButton>
           </form>
 
           <div className="mt-6">
@@ -1115,16 +1897,13 @@ const AccountabilityApp: React.FC = () => {
                 disabled={submitLoading}
                 className="w-full px-6 py-3 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-white dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
               >
-                <span className="text-lg">🔍</span>
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
                 Sign up with Google
-              </button>
-              <button
-                onClick={handleAppleSignIn}
-                disabled={submitLoading}
-                className="w-full px-6 py-3 border border-gray-800 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 text-gray-900 dark:text-white bg-black dark:bg-gray-800 flex items-center justify-center gap-2 hover:shadow-md"
-              >
-                <span className="text-lg">🍎</span>
-                Sign up with Apple
               </button>
             </div>
           </div>
@@ -1510,9 +2289,8 @@ const AccountabilityApp: React.FC = () => {
     URL.revokeObjectURL(url);
     
     addToast({
-      type: 'success',
-      title: 'Data exported!',
-      description: 'Your accountability data has been downloaded successfully.'
+      description: 'Data exported successfully! Your accountability data has been downloaded.',
+      type: 'success'
     });
   };
 
@@ -1536,10 +2314,72 @@ const AccountabilityApp: React.FC = () => {
           description="Track your goals and progress with your personal accountability dashboard"
         />
         <ThemeDialog open={themeDialogOpen} onClose={() => setThemeDialogOpen(false)} />
-        <div className="flex">
-          {/* Sidebar */}
-          <div className="w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen">
-            <div className="p-6 border-b border-blue-200 dark:border-blue-700">
+        
+        {/* Website Onboarding Prompt */}
+        {showWebsitePrompt && (
+          <WebsiteOnboardingPrompt
+            onStartTour={handleWebsitePromptStartTour}
+            onSkipTour={handleWebsitePromptSkipTour}
+            onClose={handleWebsitePromptClose}
+            userName={user?.name}
+          />
+        )}
+        
+        {/* Interactive App Tour */}
+        <AppTour
+          isOpen={showTour}
+          onClose={handleTourClose}
+          onComplete={handleTourComplete}
+        />
+        
+        {/* Mobile Header */}
+        <div className="md:hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-bold text-gray-800 dark:text-white">Accountability</h1>
+            <div className="flex items-center gap-3">
+              <TierBadge tier={userTier} />
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex relative">
+          {/* Mobile Menu Backdrop */}
+          {mobileMenuOpen && (
+            <div 
+              className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+              onClick={() => setMobileMenuOpen(false)}
+            ></div>
+          )}
+          
+          {/* Sidebar - Fixed on mobile for proper overlay */}
+          <div 
+            className={`${
+              mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+            } md:translate-x-0 fixed md:sticky top-0 left-0 w-64 bg-white dark:bg-gray-800 shadow-lg h-screen overflow-y-auto z-50 md:z-auto transition-transform duration-300 ease-in-out md:transition-none`}
+            data-tour="sidebar"
+          >
+            
+            {/* Mobile menu header */}
+            <div className="md:hidden p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h1 className="text-lg font-bold text-gray-800 dark:text-white">Menu</h1>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            {/* Desktop header */}
+            <div className="hidden md:block p-6 border-b border-blue-200 dark:border-blue-700">
               <div className="flex items-center justify-between">
                 <h1 className="text-xl font-bold text-gray-800 dark:text-white">Accountability</h1>
                 <div className="flex items-center gap-2">
@@ -1551,90 +2391,174 @@ const AccountabilityApp: React.FC = () => {
             <nav className="p-4">
               <div className="space-y-2">
                 {[
-                  { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
-                  { id: 'goals', label: 'Goals', icon: '🎯' },
-                  { id: 'checkins', label: 'Check-ins', icon: '✅' },
-                  { id: 'progress', label: 'Progress', icon: '📊' },
-                  { id: 'subscription', label: 'Subscription', icon: '💎' },
-                  { id: 'settings', label: 'Settings', icon: '⚙️' },
-                  ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: '🔧' }] : []),
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setCurrentPage(item.id)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      currentPage === item.id 
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-r-2 border-blue-500 text-blue-700 dark:text-blue-400' 
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <span className="mr-3">{item.icon}</span>
-                    {item.label}
-                  </button>
-                ))}
+                  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+                  { id: 'goals', label: 'Goals', icon: Target },
+                  { id: 'checkins', label: 'Check-ins', icon: CheckCircle2 },
+                  { id: 'progress', label: 'Progress', icon: TrendingUp },
+                  { id: 'subscription', label: 'Subscription', icon: Crown },
+                  { id: 'settings', label: 'Settings', icon: Settings },
+                  ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: Users }] : []),
+                ].map((item) => {
+                  const IconComponent = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setCurrentPage(item.id);
+                        setMobileMenuOpen(false); // Close mobile menu on navigation
+                      }}
+                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 flex items-center ${
+                        currentPage === item.id 
+                          ? 'bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/10 border-r-2 border-blue-500 text-blue-700 dark:text-blue-400 shadow-md' 
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:shadow-sm'
+                      }`}
+                    >
+                      <IconComponent size={20} className="mr-3 flex-shrink-0" />
+                      <span className="font-medium">{item.label}</span>
+                    </button>
+                  );
+                })}
                 {/* Theme selector item */}
                 <button
                   onClick={() => setThemeDialogOpen(true)}
-                  className="w-full text-left p-3 rounded-lg transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 mt-4 border-t border-blue-200 dark:border-blue-700 pt-4"
+                  className="w-full text-left p-3 rounded-lg transition-all duration-200 flex items-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:shadow-sm mt-4 border-t border-gray-200 dark:border-gray-700 pt-4"
                   aria-label="Select theme"
                 >
-                  <span className="mr-3">🌓</span> Theme
+                  <Moon size={20} className="mr-3 flex-shrink-0 dark:hidden" />
+                  <Sun size={20} className="mr-3 flex-shrink-0 hidden dark:block" />
+                  <span className="font-medium">Theme</span>
                 </button>
-              </div>
-            </nav>
-          </div>
 
-          {/* Main Content */}
-          <div className="flex-1 p-8">
-            <div className="transition-all duration-300 ease-in-out">
-              {currentPage === 'dashboard' && (
-                <div className="animate-in fade-in duration-300">
-                  <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Welcome back, {user?.name}!</h1>
-                        {isAdmin && (
-                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-medium animate-pulse">
-                            🔧 Admin
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-gray-600 dark:text-gray-400">Ready to stay accountable today?</p>
-                    </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={async () => {
-                        await signOut();
-                        setCurrentScreen('welcome');
-                      }}
-                      className="px-3 py-1 bg-red-500 dark:bg-red-600 text-white rounded text-xs hover:bg-red-600 dark:hover:bg-red-500 transition-colors"
-                    >
-                      Sign Out
-                    </button>
-                    {isAdmin && (
+                {/* PWA Install button - only show when NOT running as PWA */}
+                {showPWAInstall && !isRunningAsPWA && (
+                  <button
+                    onClick={handleInstallPWA}
+                    className={`w-full text-left p-3 rounded-lg transition-all duration-200 flex items-center hover:shadow-sm ${
+                      isPWAInstalled 
+                        ? 'text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20'
+                        : 'text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                    }`}
+                    aria-label="Install app"
+                  >
+                    <Plus size={20} className="mr-3 flex-shrink-0" />
+                    <span className="font-medium">
+                      {isPWAInstalled ? 'App Installed ✓' : deferredPrompt ? 'Install App' : 'Install App'}
+                    </span>
+                  </button>
+                )}
+
+                {/* Admin Tools - only visible to admins */}
+                {isAdmin && (
+                  <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 px-3">Admin Tools</p>
+                    <div className="space-y-1">
                       <button
                         onClick={() => addToast({ 
                           type: 'success', 
                           title: 'Admin Test Notification!', 
                           description: 'Notification system is working correctly.' 
                         })}
-                        className="px-3 py-1 bg-green-500 dark:bg-green-600 text-white rounded text-xs hover:bg-green-600 dark:hover:bg-green-500 transition-colors"
+                        className="w-full text-left p-2 text-xs rounded-lg text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all duration-200"
                       >
-                        Test Toast
+                        🧪 Test Toast
                       </button>
-                    )}
-                    {isAdmin && (
                       <button
                         onClick={() => {
                           throw new Error('Test error boundary');
                         }}
-                        className="px-3 py-1 bg-orange-500 dark:bg-orange-600 text-white rounded text-xs hover:bg-orange-600 dark:hover:bg-orange-500 transition-colors"
+                        className="w-full text-left p-2 text-xs rounded-lg text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all duration-200"
                       >
-                        Test Error
+                        ⚠️ Test Error
                       </button>
-                    )}
+                      <button
+                        onClick={async () => {
+                          const sessionAge = getSessionAge();
+                          const ageInMinutes = sessionAge ? Math.floor(sessionAge / (1000 * 60)) : 0;
+                          console.log('🧹 Clearing session from admin tools...');
+                          clearUserData(); // Clear local state first
+                          await clearSession(); // Then clear auth
+                          addToast({
+                            description: `🧹 Session cleared! (Was active for ${ageInMinutes} minutes)`,
+                            type: 'success'
+                          });
+                          // Small delay before reload to show toast
+                          setTimeout(() => {
+                            window.location.reload();
+                          }, 1000);
+                        }}
+                        className="w-full text-left p-2 text-xs rounded-lg text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all duration-200"
+                      >
+                        🧹 Clear Session
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await signOut();
+                          setCurrentScreen('welcome');
+                        }}
+                        className="w-full text-left p-2 text-xs rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200"
+                      >
+                        <LogOut size={14} className="inline mr-1" />
+                        Admin Logout
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
+              </div>
+            </nav>
+          </div>
+
+          {/* Main Content - Responsive with proper spacing for mobile */}
+          <div className="flex-1 w-full md:w-auto p-4 md:p-8 md:ml-0">
+            <div className="transition-all duration-300 ease-in-out">
+              {currentPage === 'dashboard' && (
+                <div className="animate-in fade-in duration-300">
+                  {(() => {
+                    const weeklyStats = getWeeklyStats();
+                    return (
+                      <div data-tour="dashboard-header">
+                        <DashboardHeader
+                          title={`Welcome back, ${user?.name}!`}
+                          subtitle="Ready to stay accountable today?"
+                          stats={[
+                          {
+                            title: 'Total Goals',
+                            value: goals.length,
+                            change: weeklyStats.goalsChange,
+                            icon: Target,
+                            color: 'blue'
+                          },
+                          {
+                            title: 'Check-ins',
+                            value: checkIns.length,
+                            change: weeklyStats.checkInsChange,
+                            icon: CheckCircle2,
+                            color: 'green'
+                          },
+                          {
+                            title: 'Current Streak',
+                            value: `${weeklyStats.currentStreak} day${weeklyStats.currentStreak !== 1 ? 's' : ''}`,
+                            icon: Zap,
+                            color: 'orange'
+                          },
+                          {
+                            title: 'Plan',
+                            value: userTier.charAt(0).toUpperCase() + userTier.slice(1),
+                            icon: Crown,
+                            color: userTier === 'free' ? 'blue' : 'purple'
+                          }
+                        ]}
+                        action={{
+                          label: 'Quick Check-in',
+                          onClick: () => setCurrentPage('checkins'),
+                          icon: Plus
+                        }}
+                      />
+                      </div>
+                    );
+                  })()}
+
+                {/* Spacing between stats and usage summary */}
+                <div className="mb-8"></div>
 
                 {/* Usage Summary for Free Users */}
                 {userTier === 'free' && (
@@ -1697,33 +2621,6 @@ const AccountabilityApp: React.FC = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {/* Daily Goals Card */}
-                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-xl p-6 text-white">
-                    <h3 className="text-xl font-semibold mb-2">Active Goals</h3>
-                    <p className="text-blue-100 dark:text-blue-200 mb-4">Goals in progress</p>
-                    <div className="text-3xl font-bold">{goals.filter(g => !g.completed).length}</div>
-                    <p className="text-sm text-blue-200 dark:text-blue-300">
-                      {goals.filter(g => !g.completed).length === 1 ? 'goal' : 'goals'} active • {goals.filter(g => g.completed).length} completed
-                    </p>
-                  </div>
-
-                  {/* Streak Card */}
-                  <div className="bg-gradient-to-r from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-xl p-6 text-white">
-                    <h3 className="text-xl font-semibold mb-2">Streak</h3>
-                    <p className="text-green-100 dark:text-green-200 mb-4">Your consistency record</p>
-                    <div className="text-3xl font-bold">{checkIns.length}</div>
-                    <p className="text-sm text-green-200 dark:text-green-300">Total check-ins</p>
-                  </div>
-
-                  {/* Progress Card */}
-                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-xl p-6 text-white">
-                    <h3 className="text-xl font-semibold mb-2">Progress</h3>
-                    <p className="text-purple-100 dark:text-purple-200 mb-4">Overall completion rate</p>
-                    <div className="text-3xl font-bold">0%</div>
-                    <p className="text-sm text-purple-200 dark:text-purple-300">This month</p>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1736,21 +2633,21 @@ const AccountabilityApp: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6" data-tour="goals-section">
                   <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Your Goals</h2>
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white flex items-center">
+                      <Target size={24} className="mr-2 text-blue-500" />
+                      Your Goals
+                    </h2>
                     <div className="relative">
-                      <button 
+                      <EnhancedButton
                         onClick={() => setShowAddGoal(true)}
                         disabled={!canAddMoreGoals}
-                        className={`px-4 py-2 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-[1.02] ${
-                          canAddMoreGoals 
-                            ? 'bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600 hover:shadow-lg' 
-                            : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed hover:scale-100'
-                        }`}
+                        icon={<Plus size={20} />}
+                        variant={canAddMoreGoals ? "primary" : "secondary"}
                       >
-                        + Add New Goal
-                      </button>
+                        Add New Goal
+                      </EnhancedButton>
                       {!canAddMoreGoals && userTier === 'free' && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                           Goal Limit: {currentGoals}/{maxGoals}
@@ -1761,88 +2658,116 @@ const AccountabilityApp: React.FC = () => {
 
                   {/* Add Goal Form */}
                   {showAddGoal && (
-                    <div className="mb-6 p-4 border border-blue-200 dark:border-blue-700 rounded-lg bg-blue-50 dark:bg-blue-900/20 animate-in slide-in-from-top duration-300">
-                      <h3 className="font-medium text-gray-800 dark:text-white mb-3">Add New Goal</h3>
-                      <div className="space-y-3">
-                        <input
+                    <div className="mb-6 p-6 border border-blue-200 dark:border-blue-700 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 animate-in slide-in-from-top duration-300">
+                      <h3 className="font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                        <Plus size={20} className="mr-2 text-blue-500" />
+                        Add New Goal
+                      </h3>
+                      <div className="space-y-4">
+                        <FormField
+                          label="Goal Title"
                           type="text"
-                          placeholder="Goal title..."
                           value={newGoal.title}
-                          onChange={(e) => setNewGoal({ ...newGoal, title: e.target.value })}
-                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
+                          onChange={(value) => setNewGoal({ ...newGoal, title: value })}
+                          placeholder="e.g., Exercise 30 minutes daily"
+                          required
+                          validation={{
+                            minLength: 3,
+                            maxLength: 100
+                          }}
                         />
-                        <textarea
-                          placeholder="Goal description..."
+                        <FormField
+                          label="Goal Description"
+                          type="textarea"
                           value={newGoal.description}
-                          onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
-                          className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                          rows={2}
+                          onChange={(value) => setNewGoal({ ...newGoal, description: value })}
+                          placeholder="Describe what success looks like and why this goal matters to you..."
+                          validation={{
+                            minLength: 10,
+                            maxLength: 500
+                          }}
+                          rows={3}
                         />
-                        <div className="flex gap-2">
-                          <button
+                        <div className="flex gap-3">
+                          <EnhancedButton
                             onClick={handleAddGoal}
-                            className="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg"
+                            disabled={!newGoal.title.trim() || !newGoal.description.trim()}
+                            icon={<Save size={18} />}
+                            variant="primary"
                           >
                             Add Goal
-                          </button>
-                          <button
+                          </EnhancedButton>
+                          <EnhancedButton
                             onClick={() => setShowAddGoal(false)}
-                            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-all duration-200 ease-in-out transform hover:scale-[1.02]"
+                            variant="secondary"
                           >
                             Cancel
-                          </button>
+                          </EnhancedButton>
                         </div>
                       </div>
                     </div>
                   )}
 
                   <div className="space-y-3">
-                    {goals.map((goal) => (
-                      <div key={goal.id} className={`p-4 border border-blue-200 dark:border-blue-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md ${goal.completed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700 animate-pulse' : 'hover:bg-blue-50 dark:hover:bg-blue-900/10'}`}>
-                        <div className="flex justify-between items-start">
-                          <div className="flex items-start gap-3 flex-1">
-                            <div className="flex items-center mt-1">
-                              <input
-                                type="checkbox"
-                                checked={goal.completed}
-                                onChange={() => handleToggleGoal(goal.id)}
-                                className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 transition-all duration-200 ease-in-out transform hover:scale-110"
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <h3 className={`font-medium mb-1 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-white'}`}>
-                                {goal.title}
-                              </h3>
-                              <p className={`text-sm mb-2 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-400'}`}>
-                                {goal.description}
-                              </p>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-2 overflow-hidden">
-                                  <div 
-                                    className={`h-2 rounded-full transition-all duration-500 ease-out ${goal.completed ? 'bg-green-500 dark:bg-green-400 animate-pulse' : 'bg-blue-600 dark:bg-blue-500'}`}
-                                    style={{ width: `${goal.progress}%` }}
-                                  ></div>
+                    {goals.length === 0 ? (
+                      <EmptyState
+                        icon={Target}
+                        title="No goals yet"
+                        description="Start your accountability journey by creating your first goal. Make it specific, measurable, and exciting!"
+                        action={{
+                          label: "Create Your First Goal",
+                          onClick: () => setShowAddGoal(true)
+                        }}
+                      />
+                    ) : (
+                      goals.map((goal) => (
+                        <div key={goal.id} className={`p-4 border border-gray-200 dark:border-gray-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md ${goal.completed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-start gap-3 flex-1">
+                              <div className="flex items-center mt-1">
+                                <input
+                                  type="checkbox"
+                                  checked={goal.completed}
+                                  onChange={() => handleToggleGoal(goal.id)}
+                                  className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 transition-all duration-200 ease-in-out transform hover:scale-110"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className={`font-medium mb-1 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-white'}`}>
+                                  {goal.title}
+                                </h3>
+                                <p className={`text-sm mb-2 transition-all duration-300 ease-in-out ${goal.completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-400'}`}>
+                                  {goal.description}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-2 overflow-hidden">
+                                    <div 
+                                      className={`h-2 rounded-full transition-all duration-500 ease-out ${goal.completed ? 'bg-green-500 dark:bg-green-400' : 'bg-blue-600 dark:bg-blue-500'}`}
+                                      style={{ width: `${goal.progress}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors duration-300">{goal.progress}%</span>
+                                  {goal.completed && (
+                                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-1 rounded-full flex items-center">
+                                      <CheckCircle2 size={12} className="mr-1" />
+                                      Completed
+                                    </span>
+                                  )}
                                 </div>
-                                <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors duration-300">{goal.progress}%</span>
-                                {goal.completed && (
-                                  <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-1 rounded-full animate-in slide-in-from-right duration-300">
-                                    ✓ Completed
-                                  </span>
-                                )}
                               </div>
                             </div>
+                            <button
+                              onClick={() => handleDeleteGoal(goal.id)}
+                              className="ml-4 px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all duration-200 ease-in-out transform hover:scale-110 flex items-center"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleDeleteGoal(goal.id)}
-                            className="ml-4 px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all duration-200 ease-in-out transform hover:scale-110"
-                          >
-                            Delete
-                          </button>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                     
-                    {userTier === 'free' && (
+                    {userTier === 'free' && goals.length > 0 && (
                       <UpgradePrompt 
                         feature="Unlock More Goals"
                         description="You're currently limited to 2 goals. Upgrade to Standard for up to 10 goals, or Premium for unlimited goals."
@@ -2458,16 +3383,35 @@ const AccountabilityApp: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            localStorage.removeItem('hasCreatedAccount');
-                            setShowOnboarding(true);
-                            setCurrentScreen('onboarding');
+                            console.log('🎯 Starting manual app tour from settings');
+                            startTour();
                           }}
                           className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-all duration-300"
+                          data-tour="settings-button"
                         >
                           View App Tour
                         </button>
                       </div>
                       <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            console.log('🧹 Clearing session from settings...');
+                            clearUserData(); // Clear local state first
+                            await clearSession(); // Then clear auth
+                            addToast({
+                              description: '🧹 Session cleared for testing!',
+                              type: 'success'
+                            });
+                            // Small delay before reload to show toast
+                            setTimeout(() => {
+                              window.location.reload();
+                            }, 1000);
+                          }}
+                          className="w-full p-3 text-left text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-700 rounded-lg transition-colors"
+                        >
+                          🧹 Clear Session (Testing)
+                        </button>
                         <button
                           type="button"
                           onClick={handleSignOut}
@@ -2484,82 +3428,154 @@ const AccountabilityApp: React.FC = () => {
 
             {currentPage === 'checkins' && (
               <div>
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Check-ins</h1>
-                    <p className="text-gray-600 dark:text-gray-400">Track your daily accountability</p>
-                  </div>
-                </div>
+                <DashboardHeader
+                  title="Daily Check-ins"
+                  subtitle="Track your daily accountability and reflect on your progress"
+                  action={{
+                    label: hasCheckedInToday ? "View Progress" : "Quick Check-in",
+                    onClick: () => hasCheckedInToday ? setCurrentPage('progress') : null,
+                    icon: hasCheckedInToday ? TrendingUp : CheckCircle2
+                  }}
+                />
 
-                <div className="space-y-6">
+                <div className="space-y-6 mt-8" data-tour="checkins-section">
                   {/* Today's Check-in */}
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 transition-all duration-300 ease-in-out hover:shadow-2xl">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
-                      {hasCheckedInToday ? "Today's Check-in Complete ✅" : "Today's Check-in"}
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                      {hasCheckedInToday ? (
+                        <>
+                          <CheckCircle2 size={24} className="mr-3 text-green-500" />
+                          Today's Check-in Complete
+                        </>
+                      ) : (
+                        <>
+                          <Calendar size={24} className="mr-3 text-blue-500" />
+                          Today's Check-in
+                        </>
+                      )}
                     </h2>
                     {!hasCheckedInToday ? (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
+                        <FormField
+                          label="How did today go?"
+                          type="textarea"
+                          value={todayCheckIn.reflection}
+                          onChange={(value) => setTodayCheckIn({ ...todayCheckIn, reflection: value })}
+                          placeholder="Reflect on your progress, challenges, and wins today..."
+                          required
+                          validation={{
+                            minLength: 10,
+                            maxLength: 1000
+                          }}
+                          rows={4}
+                        />
+                        
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">How did today go?</label>
-                          <textarea 
-                            value={todayCheckIn.reflection}
-                            onChange={(e) => setTodayCheckIn({ ...todayCheckIn, reflection: e.target.value })}
-                            className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ease-in-out transform focus:scale-[1.02] hover:shadow-md"
-                            rows={3}
-                            placeholder="Reflect on your progress today..."
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Rate your day: {todayCheckIn.rating}/10
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                            Rate your day: <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{todayCheckIn.rating}/10</span>
                           </label>
-                          <input 
-                            type="range" 
-                            min="1" 
-                            max="10" 
-                            value={todayCheckIn.rating}
-                            onChange={(e) => setTodayCheckIn({ ...todayCheckIn, rating: parseInt(e.target.value) })}
-                            className="w-full transition-all duration-200 ease-in-out hover:scale-[1.02]"
-                          />
+                          <div className="relative">
+                            <input 
+                              type="range" 
+                              min="1" 
+                              max="10" 
+                              value={todayCheckIn.rating}
+                              onChange={(e) => setTodayCheckIn({ ...todayCheckIn, rating: parseInt(e.target.value) })}
+                              className="w-full h-3 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                              <span>Poor</span>
+                              <span>Average</span>
+                              <span>Excellent</span>
+                            </div>
+                          </div>
                         </div>
-                        <button 
+                        
+                        <EnhancedButton 
                           onClick={handleSubmitCheckIn}
                           disabled={!todayCheckIn.reflection.trim()}
-                          className="px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-all duration-200 ease-in-out transform hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
+                          variant="primary"
+                          size="lg"
+                          icon={<Save size={20} />}
+                          fullWidth
                         >
                           Submit Check-in
-                        </button>
+                        </EnhancedButton>
                       </div>
                     ) : (
                       <div className="text-center py-8 animate-in fade-in duration-500">
-                        <div className="text-6xl mb-4 animate-bounce">🎉</div>
-                        <p className="text-gray-600 dark:text-gray-400">You've already checked in today! Come back tomorrow.</p>
+                        <div className="w-20 h-20 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <CheckCircle2 size={40} className="text-green-500" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">All done for today!</h3>
+                        <p className="text-gray-600 dark:text-gray-400">You've already checked in today. Come back tomorrow to continue your streak.</p>
                       </div>
                     )}
                   </div>
 
                   {/* Recent Check-ins */}
                   <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 transition-all duration-300 ease-in-out hover:shadow-2xl">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recent Check-ins</h2>
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                      <Activity size={24} className="mr-3 text-purple-500" />
+                      Recent Check-ins
+                    </h2>
                     {checkIns.length === 0 ? (
-                      <div className="text-center py-8">
-                        <div className="text-6xl mb-4">📝</div>
-                        <p className="text-gray-600 dark:text-gray-400">No check-ins yet. Submit your first one above!</p>
-                      </div>
+                      <EmptyState
+                        icon={Calendar}
+                        title="No check-ins yet"
+                        description="Start building your accountability habit by completing your first daily check-in above!"
+                        action={!hasCheckedInToday ? {
+                          label: "Complete Today's Check-in",
+                          onClick: () => document.getElementById('check-in-form')?.scrollIntoView({ behavior: 'smooth' })
+                        } : undefined}
+                      />
                     ) : (
                       <div className="space-y-3">
                         {checkIns.slice(0, 5).map((checkIn, index) => (
-                          <div key={checkIn.id} className="p-4 border border-blue-200 dark:border-blue-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/10"
+                          <div key={checkIn.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] hover:shadow-md hover:bg-gray-50 dark:hover:bg-gray-700/30"
                                style={{ animationDelay: `${index * 100}ms` }}>
                             <div className="flex items-center justify-between mb-2">
-                              <span className="font-medium text-gray-800 dark:text-white">{checkIn.date}</span>
-                              <span className="text-sm text-gray-600 dark:text-gray-400 transition-colors duration-300">
-                                Rating: {checkIn.rating}/10
+                              <span className="font-medium text-gray-800 dark:text-white flex items-center">
+                                <Calendar size={16} className="mr-2 text-gray-500" />
+                                {new Date(checkIn.date).toLocaleDateString('en', { 
+                                  weekday: 'short', 
+                                  month: 'short', 
+                                  day: 'numeric' 
+                                })}
                               </span>
+                              <div className="flex items-center">
+                                <Star 
+                                  size={16} 
+                                  className={`mr-1 ${
+                                    checkIn.rating >= 8 ? 'text-green-500' : 
+                                    checkIn.rating >= 6 ? 'text-yellow-500' : 
+                                    'text-red-500'
+                                  }`} 
+                                />
+                                <span className={`text-sm font-medium ${
+                                  checkIn.rating >= 8 ? 'text-green-600 dark:text-green-400' : 
+                                  checkIn.rating >= 6 ? 'text-yellow-600 dark:text-yellow-400' : 
+                                  'text-red-600 dark:text-red-400'
+                                }`}>
+                                  {checkIn.rating}/10
+                                </span>
+                              </div>
                             </div>
-                            <p className="text-gray-600 dark:text-gray-400 text-sm transition-colors duration-300">{checkIn.reflection}</p>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">{checkIn.reflection}</p>
                           </div>
                         ))}
+                        
+                        {checkIns.length > 5 && (
+                          <div className="text-center pt-4">
+                            <EnhancedButton
+                              onClick={() => setCurrentPage('progress')}
+                              variant="secondary"
+                              icon={<Eye size={18} />}
+                            >
+                              View All Check-ins
+                            </EnhancedButton>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3091,6 +4107,12 @@ const AccountabilityApp: React.FC = () => {
                         >
                           🗑️ Clear Logs
                         </button>
+                        <button 
+                          onClick={generateTestData}
+                          className="p-2 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors text-xs font-medium"
+                        >
+                          📊 Generate Test Statistics Data
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -3143,6 +4165,12 @@ const AccountabilityApp: React.FC = () => {
 
   switch (currentScreen) {
     case 'onboarding':
+      // Safety guard: never show onboarding if user is not logged in
+      if (!user) {
+        console.log('⚠️ Prevented onboarding from showing without user - redirecting to welcome');
+        setCurrentScreen('welcome');
+        return renderWelcomeScreen();
+      }
       return <OnboardingFlow onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />;
     case 'login':
       return renderLoginScreen();
