@@ -7,11 +7,8 @@
   - Configure Google Sign-In in Firebase Console
   - Add authorized domains (localhost + production domain)
   - Test Google login flow
-- [ ] **Apple Sign-In Setup** (30-60 minutes)
-  - Get Apple Developer Account ($99/year)
-  - Configure Service ID and certificates
-  - Set up in Firebase Console
-  - Test Apple login flow
+- [x] **Apple Sign-In Setup** ✅ **REMOVED**
+  - Removed due to $99/year cost - keeping Google OAuth and email/password only
 - [ ] **Environment Variables Security**
   - [ ] Move all API keys to environment variables
   - [ ] Set up production environment variables
