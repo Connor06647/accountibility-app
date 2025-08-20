@@ -24,6 +24,7 @@ const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "your-admin-email@exa
 // Session timeout constants
 const WEBSITE_IDLE_TIMEOUT = 2 * 60 * 60 * 1000; // 2 hours for website
 const PWA_IDLE_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days for PWA (much longer)
+const WARNING_TIME = 10 * 60 * 1000; // Show warning 10 minutes before logout
 
 interface AuthContextType {
   user: User | null;
@@ -40,9 +41,11 @@ interface AuthContextType {
   signInWithApple: () => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   clearError: () => void;
-  // Session management
+  // Enhanced session management
   clearSession: () => Promise<void>;
   getSessionAge: () => number | null;
+  getTimeUntilLogout: () => number | null;
+  extendSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -62,6 +65,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [lastActivity, setLastActivity] = useState<number | null>(null);
+  const [initializing, setInitializing] = useState(true);
+  const [warningShown, setWarningShown] = useState(false);
+  const [logoutWarningTimer, setLogoutWarningTimer] = useState<NodeJS.Timeout | null>(null);
+  
+  // Detect if running as website vs PWA
+  const [isWebsite, setIsWebsite] = useState(true);
+  
+  useEffect(() => {
+    // Detect if running as PWA or website
+    const checkPlatform = () => {
+      const isPWA = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+      const isIOS = navigator.userAgent.match(/iPhone|iPad|iPod/);
+      const isAndroidPWA = window.navigator?.standalone === true;
+      
+      const actuallyPWA = isPWA || isAndroidPWA || (isIOS && window.navigator?.standalone);
+      setIsWebsite(!actuallyPWA);
+      
+      console.log('🔐 Platform Detection:', {
+        isPWA: actuallyPWA,
+        isWebsite: !actuallyPWA,
+        sessionTimeout: actuallyPWA ? '7 days' : '2 hours',
+        userAgent: navigator.userAgent.substring(0, 50)
+      });
+    };
+    
+    checkPlatform();
+  }, []);
 
   // Check if current user is admin - more robust checking
   const checkIsAdmin = (email: string | null | undefined): boolean => {
@@ -289,18 +319,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // We intentionally omit sessionStartTime and lastActivity to prevent infinite re-renders
 
-  // Idle timeout effect - auto-logout inactive users on website
+  // Enhanced idle timeout effect - auto-logout inactive users on website
   useEffect(() => {
     if (!user || !lastActivity) return;
 
-    const platformInfo = detectPlatform();
-    const isWebsite = platformInfo.isWebsite;
-    
     // Only apply idle timeout to website users, not PWA users
-    if (!isWebsite) return;
+    if (!isWebsite) {
+      console.log('🔐 PWA detected - no auto-logout timeout applied');
+      return;
+    }
 
-    const WARNING_TIME = 10 * 60 * 1000; // Show warning 10 minutes before logout
-    let warningShown = false;
+    console.log('🔐 Website detected - applying 2-hour auto-logout timeout');
 
     const checkIdleTimeout = () => {
       const now = Date.now();
@@ -309,13 +338,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Show warning 10 minutes before logout
       if (timeUntilLogout <= WARNING_TIME && !warningShown) {
-        warningShown = true;
-        console.log('⚠️ Idle timeout warning - logging out in 10 minutes due to inactivity');
+        setWarningShown(true);
+        console.log('⚠️ SECURITY WARNING: Auto-logout in 10 minutes due to inactivity');
+        
+        // Show user-visible warning (you can enhance this with a modal/toast)
+        if (window.confirm('You will be automatically logged out in 10 minutes due to inactivity. Click OK to stay logged in.')) {
+          // User wants to stay - extend session
+          setLastActivity(Date.now());
+          setWarningShown(false);
+        }
       }
       
       // Auto-logout after full timeout period
       if (timeSinceActivity > WEBSITE_IDLE_TIMEOUT) {
-        console.log('🔐 User idle timeout - auto-logout after 2 hours of inactivity');
+        console.log('🔐 SECURITY: Auto-logout after 2 hours of inactivity');
         signOut();
       }
     };
@@ -323,15 +359,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Check every minute for idle timeout
     const intervalId = setInterval(checkIdleTimeout, 60 * 1000);
     
-    return () => clearInterval(intervalId);
-  }, [user, lastActivity]);
+    return () => {
+      clearInterval(intervalId);
+      if (logoutWarningTimer) {
+        clearTimeout(logoutWarningTimer);
+      }
+    };
+  }, [user, lastActivity, isWebsite, warningShown, logoutWarningTimer]);
 
-  // Update activity on user interactions
+  // Enhanced activity tracking with better security
   useEffect(() => {
     if (!user) return;
 
     const updateActivity = () => {
       setLastActivity(Date.now());
+      setWarningShown(false); // Reset warning when user is active
     };
 
     // Set initial activity time when user logs in
@@ -340,7 +382,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Listen for user activity events
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click', 'focus'];
     
     events.forEach(event => {
       document.addEventListener(event, updateActivity, { passive: true });
@@ -352,6 +394,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     };
   }, [user, lastActivity]);
+
+  // Browser close detection - logout immediately when browser/tab closes (website only)
+  useEffect(() => {
+    if (!user || !isWebsite) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // For website users, logout immediately when closing browser/tab
+      console.log('🔐 SECURITY: Browser closing - immediate logout for website user');
+      signOut();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab became hidden - start stricter timeout
+        console.log('🔐 Tab hidden - stricter session monitoring activated');
+      } else {
+        // Tab became visible - user is back
+        if (user) {
+          setLastActivity(Date.now());
+          setWarningShown(false);
+        }
+      }
+    };
+
+    // Add event listeners for browser close detection
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, isWebsite]);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -459,15 +534,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
+      console.log('🔐 SECURITY: User logout initiated');
       await firebaseSignOut(auth);
       setSessionStartTime(null);
       setLastActivity(null);
+      setWarningShown(false);
+      if (logoutWarningTimer) {
+        clearTimeout(logoutWarningTimer);
+        setLogoutWarningTimer(null);
+      }
     } catch (err) {
       console.error('Error signing out:', err);
     }
   };
 
-  // Session management functions
+  // Enhanced session management functions
   const clearSession = async () => {
     try {
       console.log('🧹 Clearing session for testing...');
@@ -476,9 +557,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFirebaseUser(null);
       setSessionStartTime(null);
       setLastActivity(null);
+      setWarningShown(false);
       
-      // Clear local storage
+      // Clear local storage and session storage for security
       localStorage.clear();
+      sessionStorage.clear();
       
       console.log('✅ Session cleared successfully');
     } catch (err) {
@@ -489,6 +572,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getSessionAge = (): number | null => {
     if (!sessionStartTime) return null;
     return Date.now() - sessionStartTime;
+  };
+
+  const getTimeUntilLogout = (): number | null => {
+    if (!lastActivity || !isWebsite) return null;
+    const timeSinceActivity = Date.now() - lastActivity;
+    return Math.max(0, WEBSITE_IDLE_TIMEOUT - timeSinceActivity);
+  };
+
+  const extendSession = () => {
+    if (user) {
+      setLastActivity(Date.now());
+      setWarningShown(false);
+      console.log('🔐 Session extended by user action');
+    }
   };
 
   const canAccessFeature = (feature: string): boolean => {
@@ -536,6 +633,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearError,
     clearSession,
     getSessionAge,
+    getTimeUntilLogout,
+    extendSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

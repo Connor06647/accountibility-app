@@ -18,6 +18,7 @@ interface AuthContextType {
   user: User | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
+  initializing: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -38,45 +39,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setFirebaseUser(firebaseUser);
+      // Clear any existing timeout
+      if (timeoutId) clearTimeout(timeoutId);
       
-      if (firebaseUser) {
-        // Get user data from Firestore
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as User;
-          setUser(userData);
+      try {
+        setFirebaseUser(firebaseUser);
+        
+        if (firebaseUser) {
+          // Set minimum loading time to prevent flickering
+          const minLoadingTime = new Promise(resolve => setTimeout(resolve, 800));
+          
+          // Get user data from Firestore with timeout
+          const userDataPromise = Promise.race([
+            getDoc(doc(db, 'users', firebaseUser.uid)),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Firestore timeout')), 10000)
+            )
+          ]) as Promise<any>;
+
+          try {
+            const [userDoc] = await Promise.all([userDataPromise, minLoadingTime]);
+            
+            if (userDoc.exists()) {
+              const userData = userDoc.data() as User;
+              setUser(userData);
+            } else {
+              // Create default user data
+              const newUser: User = {
+                id: firebaseUser.uid,
+                email: firebaseUser.email!,
+                name: firebaseUser.displayName || 'User',
+                createdAt: new Date(),
+                subscription: 'free',
+                lastActive: new Date(),
+                hasEngaged: false,
+                preferences: {
+                  timezone: 'UTC',
+                  notificationTime: '09:00',
+                  coachingTone: 'balanced',
+                  reminderFrequency: 'daily',
+                  focusAreas: [],
+                },
+              };
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+              setUser(newUser);
+            }
+          } catch (error) {
+            console.error('Error loading user data:', error);
+            // Fallback user object to prevent app from breaking
+            setUser({
+              id: firebaseUser.uid,
+              email: firebaseUser.email!,
+              name: firebaseUser.displayName || 'User',
+              createdAt: new Date(),
+              subscription: 'free',
+              lastActive: new Date(),
+              hasEngaged: false,
+              preferences: {
+                timezone: 'UTC',
+                notificationTime: '09:00',
+                coachingTone: 'balanced',
+                reminderFrequency: 'daily',
+                focusAreas: [],
+              },
+            });
+          }
         } else {
-          // Create default user data
-          const newUser: User = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email!,
-            name: firebaseUser.displayName || 'User',
-            createdAt: new Date(),
-            subscription: 'free',
-            lastActive: new Date(),
-            hasEngaged: false, // Track if user has actually used the app
-            preferences: {
-              timezone: 'UTC',
-              notificationTime: '09:00',
-              coachingTone: 'balanced',
-              reminderFrequency: 'daily',
-              focusAreas: [],
-            },
-          };
-          await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-          setUser(newUser);
+          setUser(null);
+          // Add small delay when logging out to prevent flicker
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
-      } else {
+      } catch (error) {
+        console.error('Authentication error:', error);
         setUser(null);
+      } finally {
+        setLoading(false);
+        setInitializing(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Failsafe timeout - if auth takes too long, show the app anyway
+    timeoutId = setTimeout(() => {
+      console.warn('Authentication taking too long, showing app...');
+      setLoading(false);
+      setInitializing(false);
+    }, 15000);
+
+    return () => {
+      unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -120,6 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     firebaseUser,
     loading,
+    initializing,
     signIn,
     signUp,
     signInWithGoogle,
