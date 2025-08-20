@@ -6,17 +6,14 @@ import { UpgradePrompt, TierBadge } from '@/components/ui/upgrade-prompt-no-styl
 import { ThemeDialog } from '@/components/ui/theme-dialog';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { useToaster } from '@/components/ui/toaster';
-import OnboardingFlow from '@/components/OnboardingFlow';
 import SEO from '@/components/SEO';
 import EmptyState from '@/components/ui/empty-state';
 import { FormField, EnhancedButton } from '@/components/ui/enhanced-form';
 import { DashboardHeader } from '@/components/ui/dashboard-header';
 import { WebsiteOnboardingPrompt } from '@/components/ui/website-onboarding-prompt';
 import { AppTour } from '@/components/AppTour';
-import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, onSnapshot, where, doc, updateDoc, deleteDoc, addDoc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { usePlatformDetection } from '@/lib/platform-detection';
-import { shouldShowOnboarding, completeAppOnboarding, markWebsitePromptSeen } from '@/lib/onboarding-manager';
 
 // Import Lucide React icons
 import { 
@@ -140,14 +137,11 @@ const AccountabilityApp: React.FC = () => {
     }
   }, [user, isAdmin, userTier, addToast]);
 
-  // Platform detection
-  const platformInfo = usePlatformDetection();
-
-  const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'welcome' | 'login' | 'signup' | 'dashboard'>('welcome');
+  // Simplified state - removed platform detection and old onboarding complexity
+  const [currentScreen, setCurrentScreen] = useState<'welcome' | 'login' | 'signup' | 'dashboard'>('welcome');
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [showWebsitePrompt, setShowWebsitePrompt] = useState(false);
   const [showTour, setShowTour] = useState(false);
-  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({ name: '', username: '', email: '', password: '' });
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -211,10 +205,9 @@ const AccountabilityApp: React.FC = () => {
     // Clear login forms for security
     setLoginForm({ email: '', password: '' });
     setSignupForm({ name: '', username: '', email: '', password: '' });
-    // Reset onboarding state completely
+    // Reset tour state
     setShowWebsitePrompt(false);
     setShowTour(false);
-    setOnboardingChecked(false);
     // Reset screen to welcome (not dashboard)
     setCurrentScreen('welcome');
     setCurrentPage('dashboard');
@@ -228,60 +221,62 @@ const AccountabilityApp: React.FC = () => {
       setCurrentPage('dashboard');
       // Clear any lingering errors when successfully logged in
       clearError();
+      
+      // Show tour prompt for new users (Firebase-based persistence)
+      const checkTourStatus = async () => {
+        try {
+          // Add small delay to ensure Firebase is fully synced
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const userRef = doc(db, 'users', user.id);
+          const userDoc = await getDoc(userRef);
+          
+          if (!userDoc.exists()) {
+            console.log('🎯 NEW USER - User document does not exist, showing tour prompt');
+            setTimeout(() => {
+              setShowWebsitePrompt(true);
+            }, 1000);
+            return;
+          }
+          
+          const userData = userDoc.data();
+          const tourCompleted = userData?.tourCompleted || false;
+          
+          console.log(`🎯 Tour check for user ${user.id}:`, {
+            userEmail: user.email,
+            tourCompleted,
+            userDocExists: true,
+            tourCompletedAt: userData?.tourCompletedAt || 'never',
+            userDataKeys: Object.keys(userData || {}),
+            fullUserData: userData
+          });
+          
+          if (!tourCompleted) {
+            console.log('🎯 RETURNING USER - Tour not completed, showing tour prompt');
+            setTimeout(() => {
+              setShowWebsitePrompt(true);
+            }, 1000);
+          } else {
+            console.log('🎯 RETURNING USER - Tour already completed, skipping prompt');
+            // Explicitly don't show tour
+            setShowWebsitePrompt(false);
+          }
+        } catch (error) {
+          console.error('❌ Error checking tour status:', error);
+          // More conservative fallback - don't show tour on errors for better UX
+          console.log('🎯 Firebase error - defaulting to NO tour prompt to avoid spam');
+          setShowWebsitePrompt(false);
+        }
+      };
+      
+      checkTourStatus();
     } else {
       // User not logged in - always go to welcome screen
-      // NEVER show onboarding without a user
       setCurrentScreen('welcome');
       setCurrentPage('dashboard'); // Set default page for when they do log in
-      setShowWebsitePrompt(false); // Ensure website prompt is hidden
-      setOnboardingChecked(false); // Reset onboarding check
+      setShowWebsitePrompt(false); // Hide any tour prompts
     }
   }, [user]);
-
-  // Platform-specific onboarding logic - ONLY for logged-in users
-  useEffect(() => {
-    const checkOnboardingRequirements = async () => {
-      // Only check onboarding for authenticated users
-      if (!user || !user.id) {
-        console.log('📱 Skipping onboarding check - no authenticated user');
-        return;
-      }
-
-      // Only run once per user login session
-      if (onboardingChecked) {
-        console.log('📱 Skipping onboarding check - already checked for this session');
-        return;
-      }
-
-      try {
-        const onboardingStatus = await shouldShowOnboarding(user.id);
-        
-        console.log('📱 Onboarding status:', {
-          showWebsitePrompt: onboardingStatus.showWebsitePrompt,
-          platform: onboardingStatus.platform,
-          userId: user.id,
-          userEmail: user.email
-        });
-
-        // All users get the same experience - just the website prompt
-        if (onboardingStatus.showWebsitePrompt) {
-          // Show tour prompt AFTER dashboard loads (all users)
-          console.log('📱 Scheduling tour prompt in 500ms...');
-          setTimeout(() => {
-            console.log('📱 Showing tour prompt');
-            setShowWebsitePrompt(true);
-          }, 500); // Half second delay for smoother UX
-        }
-
-        setOnboardingChecked(true);
-      } catch (error) {
-        console.error('Error checking onboarding requirements:', error);
-        setOnboardingChecked(true);
-      }
-    };
-
-    checkOnboardingRequirements();
-  }, [user, platformInfo, onboardingChecked]);
 
   // PWA Install prompt handler
   useEffect(() => {
@@ -377,66 +372,118 @@ const AccountabilityApp: React.FC = () => {
   }, [currentScreen]);
 
   // Onboarding handlers
-  const handleOnboardingComplete = async () => {
-    if (user) {
-      // Mark app onboarding as completed for logged-in users
-      await completeAppOnboarding(user.id);
-      setCurrentScreen('dashboard');
-    } else {
-      // User completed onboarding but not logged in - go to signup
-      setCurrentScreen('signup');
-    }
-  };
-
-  const handleOnboardingSkip = async () => {
-    if (user) {
-      // Even if skipped, mark as completed so it doesn't show again
-      await completeAppOnboarding(user.id);
-      setCurrentScreen('dashboard');
-    } else {
-      setCurrentScreen('welcome');
-    }
-  };
-
-  // Website onboarding prompt handlers
-  const handleWebsitePromptStartTour = async () => {
+  // Simplified tour handlers - no more complex onboarding system
+  const handleWebsitePromptStartTour = () => {
     setShowWebsitePrompt(false);
     if (user) {
-      await markWebsitePromptSeen(user.id);
+      localStorage.setItem(`tour_seen_${user.id}`, 'true');
     }
-    // Start the interactive tour instead of old onboarding
     setShowTour(true);
   };
 
-  const handleWebsitePromptSkipTour = async () => {
+  const handleWebsitePromptSkipTour = () => {
     setShowWebsitePrompt(false);
     if (user) {
-      await markWebsitePromptSeen(user.id);
+      localStorage.setItem(`tour_seen_${user.id}`, 'true');
     }
   };
 
-  const handleWebsitePromptClose = async () => {
+  const handleWebsitePromptClose = () => {
     setShowWebsitePrompt(false);
     if (user) {
-      await markWebsitePromptSeen(user.id);
+      localStorage.setItem(`tour_seen_${user.id}`, 'true');
     }
   };
 
   // Tour handlers
-  const handleTourComplete = () => {
+  const handleTourComplete = async () => {
     setShowTour(false);
-    // Tour completed successfully
+    setShowWebsitePrompt(false);
+    
+    // Mark tour as completed in Firebase when user finishes it
+    if (user?.id) {
+      try {
+        const userRef = doc(db, 'users', user.id);
+        // Use setDoc with merge to handle both new and existing users
+        await setDoc(userRef, {
+          tourCompleted: true,
+          tourCompletedAt: new Date().toISOString(),
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        console.log(`✅ Tour completed and saved to Firebase for user ${user.id}`);
+      } catch (error) {
+        console.error('❌ Error saving tour completion:', error);
+        // Fallback to localStorage if Firebase fails
+        localStorage.setItem(`tour_seen_${user.id}`, 'true');
+      }
+    }
     console.log('🎯 App tour completed!');
   };
 
-  const handleTourClose = () => {
+  const handleTourClose = async () => {
     setShowTour(false);
+    setShowWebsitePrompt(false);
+    
+    // Also mark as seen in Firebase when user closes tour early
+    if (user?.id) {
+      try {
+        const userRef = doc(db, 'users', user.id);
+        // Use setDoc with merge to handle both new and existing users
+        await setDoc(userRef, {
+          tourCompleted: true,
+          tourCompletedAt: new Date().toISOString(),
+          tourClosedEarly: true,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        console.log(`✅ Tour closed and saved to Firebase for user ${user.id}`);
+      } catch (error) {
+        console.error('❌ Error saving tour close:', error);
+        // Fallback to localStorage if Firebase fails
+        localStorage.setItem(`tour_seen_${user.id}`, 'true');
+      }
+    }
     console.log('🎯 App tour closed');
+  };
+
+  // Handle dismiss website onboarding prompt
+  const handleDismissWebsitePrompt = async () => {
+    setShowWebsitePrompt(false);
+    
+    // Mark as completed in Firebase when user dismisses prompt
+    if (user?.id) {
+      try {
+        const userRef = doc(db, 'users', user.id);
+        // Use setDoc with merge to handle both new and existing users
+        await setDoc(userRef, {
+          tourCompleted: true,
+          tourCompletedAt: new Date().toISOString(),
+          tourDismissed: true,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        console.log(`✅ Tour prompt dismissed and saved to Firebase for user ${user.id}`);
+      } catch (error) {
+        console.error('❌ Error saving tour dismissal:', error);
+        // Fallback to localStorage if Firebase fails
+        localStorage.setItem(`tour_seen_${user.id}`, 'true');
+      }
+    }
+  };
+
+  // Handle start tour from website prompt
+  const handleStartTourFromPrompt = () => {
+    setShowWebsitePrompt(false);
+    setShowTour(true);
+    console.log('🎯 Starting tour from website prompt');
   };
 
   // Manual tour start (from settings)
   const startTour = () => {
-    setShowTour(true);
+    // Navigate to dashboard first, then start tour
+    setCurrentPage('dashboard');
+    setTimeout(() => {
+      setShowTour(true);
+      console.log('🎯 Manual tour started from settings');
+    }, 100); // Small delay to ensure page change
   };
 
   // PWA Install handler
@@ -1574,22 +1621,63 @@ const AccountabilityApp: React.FC = () => {
     }
   };
 
-  // Loading state
+  // Error state with recovery options
+  if (error && !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+            Connection Issue
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            {error}
+          </p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                clearError();
+                window.location.reload();
+              }}
+              className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors font-medium"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => {
+                clearError();
+                setCurrentScreen('welcome');
+              }}
+              className="w-full px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Continue Offline
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
         <div className="text-center max-w-sm mx-4">
-          {/* Brand Logo Container */}
+          {/* Brand Logo Container with stable animation */}
           <div className="relative mb-8">
             <div className="w-24 h-24 bg-white dark:bg-gray-800 rounded-3xl shadow-2xl flex items-center justify-center mx-auto relative overflow-hidden">
-              {/* Animated background gradient */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-600 opacity-10 animate-pulse"></div>
+              {/* Stable background gradient - no flashing */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-600 opacity-10"></div>
               <div className="relative z-10">
                 <LoadingSpinner size="lg" className="text-blue-600" />
               </div>
             </div>
-            {/* Pulse ring animation */}
-            <div className="absolute inset-0 w-24 h-24 mx-auto rounded-full border-2 border-blue-500/20 animate-ping"></div>
+            {/* Stable pulse ring - consistent timing */}
+            <div className="absolute inset-0 w-24 h-24 mx-auto rounded-full border-2 border-blue-500/20 animate-ping" style={{ animationDuration: '2s' }}></div>
           </div>
           
           {/* Brand Text */}
@@ -1602,20 +1690,34 @@ const AccountabilityApp: React.FC = () => {
             </p>
           </div>
           
-          {/* Loading Message */}
+          {/* Stable Loading Message */}
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-              Setting up your dashboard
+              Loading your dashboard
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Preparing your personalized experience...
+              Please wait while we prepare your experience...
             </p>
           </div>
           
-          {/* Progress indicator */}
+          {/* Stable progress indicator */}
           <div className="mt-6">
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-1 rounded-full animate-pulse" style={{width: '60%'}}></div>
+              <div 
+                className="bg-gradient-to-r from-blue-500 to-indigo-600 h-1 rounded-full transition-all duration-1000"
+                style={{
+                  width: '75%',
+                  animation: 'pulse 2s ease-in-out infinite'
+                }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* Connection status indicator */}
+          <div className="mt-4 text-xs text-gray-400 dark:text-gray-500">
+            <div className="flex items-center justify-center space-x-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>Connecting to secure servers...</span>
             </div>
           </div>
         </div>
@@ -2318,9 +2420,9 @@ const AccountabilityApp: React.FC = () => {
         {/* Website Onboarding Prompt */}
         {showWebsitePrompt && (
           <WebsiteOnboardingPrompt
-            onStartTour={handleWebsitePromptStartTour}
-            onSkipTour={handleWebsitePromptSkipTour}
-            onClose={handleWebsitePromptClose}
+            onStartTour={handleStartTourFromPrompt}
+            onSkipTour={handleDismissWebsitePrompt}
+            onClose={handleDismissWebsitePrompt}
             userName={user?.name}
           />
         )}
@@ -2407,6 +2509,7 @@ const AccountabilityApp: React.FC = () => {
                         setCurrentPage(item.id);
                         setMobileMenuOpen(false); // Close mobile menu on navigation
                       }}
+                      data-tour={`nav-${item.id}`}
                       className={`w-full text-left p-3 rounded-lg transition-all duration-200 flex items-center ${
                         currentPage === item.id 
                           ? 'bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/10 border-r-2 border-blue-500 text-blue-700 dark:text-blue-400 shadow-md' 
@@ -2562,54 +2665,54 @@ const AccountabilityApp: React.FC = () => {
 
                 {/* Usage Summary for Free Users */}
                 {userTier === 'free' && (
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-6 mb-8">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 md:p-6 mb-8 mx-4 md:mx-0">
+                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-4">
                           <h3 className="font-semibold text-blue-800 dark:text-blue-400">Usage Summary</h3>
                           <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs font-medium">
                             Current Plan
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                          <div className="space-y-2 min-w-0">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Goals Limit</span>
-                              <span className="text-sm text-gray-600 dark:text-gray-400">{currentGoals}/{maxGoals}</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">{currentGoals}/{maxGoals}</span>
                             </div>
-                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 min-w-0">
                               <div 
-                                className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
-                                style={{ width: `${maxGoals > 0 ? (currentGoals / maxGoals) * 100 : 0}%` }}
+                                className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all max-w-full"
+                                style={{ width: `${maxGoals > 0 ? Math.min((currentGoals / maxGoals) * 100, 100) : 0}%` }}
                               ></div>
                             </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 break-words">
                               {maxGoals - currentGoals <= 0 ? '0 goals remaining' : `${maxGoals - currentGoals} goals remaining`}
                             </p>
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2 min-w-0">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Check-ins</span>
-                              <span className="text-sm text-gray-600 dark:text-gray-400">{checkIns.length}/30</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">{checkIns.length}/30</span>
                             </div>
-                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 min-w-0">
                               <div 
-                                className="bg-green-600 dark:bg-green-500 h-2 rounded-full transition-all"
+                                className="bg-green-600 dark:bg-green-500 h-2 rounded-full transition-all max-w-full"
                                 style={{ width: `${Math.min((checkIns.length / 30) * 100, 100)}%` }}
                               ></div>
                             </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 break-words">
                               {Math.max(30 - checkIns.length, 0)} check-ins remaining this month
                             </p>
                           </div>
                         </div>
                         <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                          <p className="text-sm text-blue-800 dark:text-blue-400">
+                          <p className="text-sm text-blue-800 dark:text-blue-400 break-words">
                             💡 <strong>Upgrade benefits:</strong> Unlimited goals, advanced analytics, data export, and priority support.
                           </p>
                         </div>
                       </div>
-                      <div className="ml-6">
+                      <div className="mt-4 lg:mt-0 lg:ml-6 flex-shrink-0">
                         <button 
                           onClick={handleUpgradeClick}
                           className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 dark:hover:from-blue-500 dark:hover:to-blue-600 transition-all font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -4164,14 +4267,6 @@ const AccountabilityApp: React.FC = () => {
   }
 
   switch (currentScreen) {
-    case 'onboarding':
-      // Safety guard: never show onboarding if user is not logged in
-      if (!user) {
-        console.log('⚠️ Prevented onboarding from showing without user - redirecting to welcome');
-        setCurrentScreen('welcome');
-        return renderWelcomeScreen();
-      }
-      return <OnboardingFlow onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />;
     case 'login':
       return renderLoginScreen();
     case 'signup':

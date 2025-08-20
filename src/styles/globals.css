@@ -29,6 +29,23 @@
   
   body {
     @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200;
+    /* Prevent overscroll on iOS PWAs */
+    overscroll-behavior: none;
+    /* Disable text selection on mobile for app-like feel */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    /* Disable touch callouts on iOS */
+    -webkit-touch-callout: none;
+    /* Disable highlighting on tap */
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Re-enable text selection for specific elements */
+  input, textarea, [contenteditable] {
+    -webkit-user-select: auto;
+    -moz-user-select: auto;
+    user-select: auto;
   }
   
   /* Dark mode overrides */
@@ -37,7 +54,7 @@
   }
 }
 
-/* Custom animations */
+/* Custom animations for professional feel */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -60,6 +77,58 @@
   }
 }
 
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+  }
+}
+
+/* Animation utility classes */
 .animate-fade-in {
   animation: fadeIn 0.5s ease-in-out;
 }
@@ -68,17 +137,45 @@
   animation: slideUp 0.3s ease-out;
 }
 
-/* Custom delay classes */
+.animate-slide-in-right {
+  animation: slideInRight 0.4s ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.4s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
 .delay-300 {
   animation-delay: 300ms;
 }
 
-.delay-500 {
-  animation-delay: 500ms;
+.delay-400 {
+  animation-delay: 400ms;
 }
 
-.delay-1000 {
-  animation-delay: 1000ms;
+.delay-500 {
+  animation-delay: 500ms;
 }
 
 /* Custom range slider styles */
@@ -158,4 +255,75 @@
 
 .dark .card-hover:hover {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* PWA and Native App Styles */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-area-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+/* App-like smooth scrolling */
+.smooth-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Native app buttons */
+.native-button {
+  -webkit-appearance: none;
+  appearance: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.native-button:active {
+  transform: scale(0.98);
+}
+
+/* Disable iOS zoom on input focus */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* PWA status bar styling */
+@media (display-mode: standalone) {
+  body {
+    background-color: #ffffff;
+  }
+  
+  .dark body {
+    background-color: #111827;
+  }
+}
+
+/* Native navigation transitions */
+.screen-transition {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
