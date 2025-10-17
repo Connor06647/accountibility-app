@@ -1,4 +1,4 @@
-# Accountability On Autopilot
+# Accountability On Autopilot - INCOMPLETE
 
 Your AI-powered discipline coach for building lasting habits and achieving your goals.
 
